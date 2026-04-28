@@ -38,7 +38,7 @@ MiniCat 是一个基于 Web 的数据库管理工具，提供直观的图形界�
 #### Linux/Mac 用户
 ```bash
 # 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 赋予执行权限
@@ -51,14 +51,14 @@ chmod +x start.sh
 #### Windows 用户
 ```bash
 # 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 双击运行或在命令行执行
 start.bat
 ```
 
-启动成功后，访问: **http://localhost:8080**
+启动成功后，访问: **http://localhost:8888**
 
 ---
 
@@ -66,7 +66,7 @@ start.bat
 
 ```bash
 # 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 一键启动
@@ -83,7 +83,7 @@ docker-compose logs -f
 docker-compose down
 ```
 
-访问: **http://localhost:8080**
+访问: **http://localhost:8888**
 
 ---
 
@@ -99,7 +99,7 @@ docker-compose down
 
 ```bash
 # 1. 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 2. 构建项目（自动构建前端）
@@ -109,7 +109,7 @@ mvn clean package -DskipTests
 java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
 ```
 
-访问: **http://localhost:8080**
+访问: **http://localhost:8888**
 
 ---
 
@@ -131,7 +131,7 @@ npm run dev
 ```
 
 前端访问: **http://localhost:5173**  
-后端API: **http://localhost:8080**
+后端API: **http://localhost:8888**
 
 ---
 
@@ -293,8 +293,8 @@ docker-compose build --no-cache
 
 ## 📮 联系方式
 
-- 项目地址: [Gitee](https://gitee.com/your-username/MiniCat)
-- 问题反馈: [Issues](https://gitee.com/your-username/MiniCat/issues)
+- 项目地址: [Gitee](https://gitee.com/zhuyuebin/mini-cat)
+- 问题反馈: [Issues](https://gitee.com/zhuyuebin/mini-cat/issues)
 
 ---
 

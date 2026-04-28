@@ -5,9 +5,12 @@ import com.minicat.minicatserver.dto.ApiResponseDTO;
 import com.minicat.minicatserver.dto.QueryResultDTO;
 import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
+import com.minicat.minicatserver.dto.CreateTableDTO;
+import com.minicat.minicatserver.dto.ImportResult;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -137,5 +140,22 @@ public class DatabaseController {
     public ApiResponseDTO<Map<String, Object>> getConnectionPoolStatus(@PathVariable String id,
                                                                        @RequestParam String database) {
         return ApiResponseDTO.success(databaseService.getConnectionPoolStatus(id, database));
+    }
+
+    @PostMapping("/connections/{id}/create-table")
+    public ApiResponseDTO<Boolean> createTable(@PathVariable String id,
+                                               @RequestParam String database,
+                                               @RequestBody CreateTableDTO createTableDTO) {
+        boolean success = databaseService.createTable(id, database, createTableDTO);
+        return ApiResponseDTO.success(success);
+    }
+
+    @PostMapping("/connections/{id}/import-data")
+    public ApiResponseDTO<ImportResult> importData(@PathVariable String id,
+                                                   @RequestParam String database,
+                                                   @RequestParam String table,
+                                                   @RequestParam("file") MultipartFile file) {
+        ImportResult result = databaseService.importData(id, database, table, file);
+        return ApiResponseDTO.success(result);
     }
 }

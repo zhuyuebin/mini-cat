@@ -19,7 +19,7 @@
 
 #### Linux/Mac
 ```bash
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 chmod +x start.sh
 ./start.sh
@@ -27,22 +27,22 @@ chmod +x start.sh
 
 #### Windows
 ```bash
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 start.bat
 ```
 
-访问: **http://localhost:8080**
+访问: **http://localhost:8888**
 
 ### 方式二：Docker部署
 
 ```bash
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 docker-compose up -d
 ```
 
-访问: **http://localhost:8080**
+访问: **http://localhost:8888**
 
 ---
 

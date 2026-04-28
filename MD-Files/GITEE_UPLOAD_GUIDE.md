@@ -41,8 +41,8 @@ git commit -m "Initial commit: MiniCat v1.0.0 with complete optimization"
 ## 步骤三: 关联远程仓库并推送
 
 ```bash
-# 替换 your-username 为你的 Gitee 用户名
-git remote add origin https://gitee.com/your-username/MiniCat.git
+# 添加远程仓库
+git remote add origin https://gitee.com/zhuyuebin/mini-cat.git
 
 # 重命名分支为 main
 git branch -M main
@@ -55,7 +55,7 @@ git push -u origin main
 
 ## 步骤四: 验证上传
 
-访问你的仓库页面: `https://gitee.com/your-username/MiniCat`
+访问你的仓库页面: `https://gitee.com/zhuyuebin/mini-cat`
 
 检查以下内容:
 - [ ] README.md 正确显示

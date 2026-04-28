@@ -200,7 +200,7 @@
 
 ### 场景一: 快速体验(新手)
 ```bash
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 ./start.sh
 ```
@@ -208,7 +208,7 @@ cd MiniCat
 
 ### 场景二: Docker 部署(推荐)
 ```bash
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 docker-compose up -d
 ```
@@ -304,7 +304,7 @@ git commit -m "Initial commit with complete optimization"
 
 ### 3. 关联远程仓库
 ```bash
-git remote add origin https://gitee.com/your-username/MiniCat.git
+git remote add origin https://gitee.com/zhuyuebin/mini-cat.git
 ```
 
 ### 4. 推送代码

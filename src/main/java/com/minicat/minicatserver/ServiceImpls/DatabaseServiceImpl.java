@@ -4,15 +4,20 @@ import com.minicat.minicatserver.Services.DatabaseService;
 import com.minicat.minicatserver.Utils.ConnectionPoolManager;
 import com.minicat.minicatserver.Utils.PasswordEncryptionService;
 import com.minicat.minicatserver.Utils.SqlInjectionValidator;
-import com.minicat.minicatserver.dto.QueryResultDTO;
-import com.minicat.minicatserver.dto.TableInfoDTO;
-import com.minicat.minicatserver.dto.ColumnInfoDTO;
+import com.minicat.minicatserver.dto.*;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.entity.DatabaseConnectionEntity;
 import com.minicat.minicatserver.repository.DatabaseConnectionRepository;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import com.opencsv.CSVReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -474,6 +479,346 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
         
         return status;
+    }
+
+    @Override
+    public boolean createTable(String connectionId, String databaseName, CreateTableDTO createTableDTO) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new RuntimeException("Connection not found");
+        }
+
+        if (createTableDTO == null || createTableDTO.getTableName() == null || createTableDTO.getTableName().trim().isEmpty()) {
+            throw new RuntimeException("表名不能为空");
+        }
+
+        if (createTableDTO.getColumns() == null || createTableDTO.getColumns().isEmpty()) {
+            throw new RuntimeException("至少需要定义一个列");
+        }
+
+        // 构建 CREATE TABLE SQL
+        StringBuilder sql = new StringBuilder();
+        sql.append("CREATE TABLE ").append(createTableDTO.getTableName()).append(" (\n");
+
+        List<CreateTableDTO.ColumnDefinition> columns = createTableDTO.getColumns();
+        List<String> primaryKeys = new ArrayList<>();
+
+        // 先收集所有主键列
+        for (CreateTableDTO.ColumnDefinition col : columns) {
+            if (col.isPrimaryKey()) {
+                primaryKeys.add(col.getColumnName());
+            }
+        }
+
+        // 构建列定义
+        for (int i = 0; i < columns.size(); i++) {
+            CreateTableDTO.ColumnDefinition col = columns.get(i);
+            sql.append("  ").append(col.getColumnName()).append(" ");
+
+            // 数据类型
+            String dataType = col.getDataType().toUpperCase();
+            if (col.getLength() != null && col.getLength() > 0) {
+                sql.append(dataType).append("(").append(col.getLength()).append(")");
+            } else {
+                sql.append(dataType);
+            }
+
+            // 自增
+            if (col.isAutoIncrement()) {
+                sql.append(" AUTO_INCREMENT");
+            }
+
+            // 可空
+            if (!col.isNullable()) {
+                sql.append(" NOT NULL");
+            }
+
+            // 默认值
+            if (col.getDefaultValue() != null && !col.getDefaultValue().isEmpty()) {
+                sql.append(" DEFAULT ");
+                // 如果是字符串类型，需要加引号
+                if (dataType.contains("CHAR") || dataType.contains("TEXT")) {
+                    sql.append("'").append(col.getDefaultValue()).append("'");
+                } else {
+                    sql.append(col.getDefaultValue());
+                }
+            }
+
+            // 注释
+            if (col.getComment() != null && !col.getComment().isEmpty()) {
+                sql.append(" COMMENT '").append(col.getComment().replace("'", "''")).append("'");
+            }
+
+            // 添加逗号：如果不是最后一列，或者后面有主键约束，就添加逗号
+            boolean isLastColumn = (i == columns.size() - 1);
+            boolean hasPrimaryKeyConstraint = !primaryKeys.isEmpty();
+            
+            if (!isLastColumn || hasPrimaryKeyConstraint) {
+                sql.append(",\n");
+            } else {
+                sql.append("\n");
+            }
+        }
+
+        // 主键约束
+        if (!primaryKeys.isEmpty()) {
+            sql.append("  PRIMARY KEY (");
+            for (int i = 0; i < primaryKeys.size(); i++) {
+                sql.append(primaryKeys.get(i));
+                if (i < primaryKeys.size() - 1) {
+                    sql.append(", ");
+                }
+            }
+            sql.append(")\n");
+        }
+
+        sql.append(")");
+
+        // 表注释
+        if (createTableDTO.getTableComment() != null && !createTableDTO.getTableComment().isEmpty()) {
+            sql.append(" COMMENT='").append(createTableDTO.getTableComment().replace("'", "''")).append("'");
+        }
+
+        sql.append(";");
+
+        String createSql = sql.toString();
+        System.out.println("[DEBUG] Creating table with SQL: " + createSql);
+
+        try (Connection c = createJdbcConnection(conn, databaseName);
+             Statement stmt = c.createStatement()) {
+            
+            stmt.executeUpdate(createSql);
+            System.out.println("[DEBUG] Table created successfully: " + createTableDTO.getTableName());
+            return true;
+
+        } catch (SQLException e) {
+            System.err.println("[ERROR] Failed to create table: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("创建表失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public ImportResult importData(String connectionId, String databaseName, String tableName, MultipartFile file) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new RuntimeException("连接不存在");
+        }
+
+        ImportResult result = new ImportResult();
+        result.setTotalRows(0);
+        result.setSuccessRows(0);
+        result.setFailedRows(0);
+        result.setSuccess(false);
+
+        try {
+            // 1. 获取表结构
+            List<ColumnInfoDTO> columns = getColumns(connectionId, databaseName, tableName);
+            if (columns.isEmpty()) {
+                throw new RuntimeException("表不存在或没有列定义");
+            }
+
+            Map<String, ColumnInfoDTO> columnMap = new LinkedHashMap<>();
+            for (ColumnInfoDTO col : columns) {
+                columnMap.put(col.getColumnName().toLowerCase(), col);
+            }
+
+            // 2. 解析文件
+            List<String[]> rows = parseFile(file);
+            if (rows.isEmpty()) {
+                throw new RuntimeException("文件中没有数据");
+            }
+
+            // 3. 校验表头
+            String[] headers = rows.get(0);
+            List<String> missingColumns = new ArrayList<>();
+            List<String> extraColumns = new ArrayList<>();
+            Map<Integer, Integer> headerToColumnIndex = new HashMap<>(); // 文件列索引 -> 数据库列索引映射
+
+            for (int i = 0; i < headers.length; i++) {
+                String header = headers[i].trim();
+                if (columnMap.containsKey(header.toLowerCase())) {
+                    headerToColumnIndex.put(i, i); // 暂时用相同索引，后续需要调整
+                } else {
+                    extraColumns.add(header);
+                }
+            }
+
+            for (String dbCol : columnMap.keySet()) {
+                boolean found = false;
+                for (String h : headers) {
+                    if (h.trim().equalsIgnoreCase(dbCol)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    missingColumns.add(dbCol);
+                }
+            }
+
+            if (!missingColumns.isEmpty() || !extraColumns.isEmpty()) {
+                StringBuilder errorMsg = new StringBuilder("表头匹配失败：\n");
+                if (!missingColumns.isEmpty()) {
+                    errorMsg.append("缺失列: ").append(String.join(", ", missingColumns)).append("\n");
+                }
+                if (!extraColumns.isEmpty()) {
+                    errorMsg.append("多余列: ").append(String.join(", ", extraColumns));
+                }
+                throw new RuntimeException(errorMsg.toString());
+            }
+
+            // 4. 批量插入数据
+            result.setTotalRows(rows.size() - 1); // 减去表头行
+            try (Connection c = createJdbcConnection(conn, databaseName)) {
+                c.setAutoCommit(false);
+                String insertSql = buildInsertSql(tableName, headers);
+                
+                try (PreparedStatement ps = c.prepareStatement(insertSql)) {
+                    for (int i = 1; i < rows.size(); i++) {
+                        String[] row = rows.get(i);
+                        try {
+                            setParameters(ps, row, headers, columnMap);
+                            ps.addBatch();
+                            result.setSuccessRows(result.getSuccessRows() + 1);
+                        } catch (Exception e) {
+                            result.setFailedRows(result.getFailedRows() + 1);
+                            System.err.println("导入第 " + i + " 行失败: " + e.getMessage());
+                        }
+                    }
+                    ps.executeBatch();
+                    c.commit();
+                } catch (Exception e) {
+                    c.rollback();
+                    throw new RuntimeException("批量插入数据失败: " + e.getMessage(), e);
+                }
+            }
+
+            result.setSuccess(true);
+            result.setMessage("导入完成。总计: " + result.getTotalRows() + ", 成功: " + result.getSuccessRows() + ", 失败: " + result.getFailedRows());
+
+        } catch (Exception e) {
+            result.setMessage("导入失败: " + e.getMessage());
+            throw new RuntimeException(e.getMessage(), e);
+        }
+
+        return result;
+    }
+
+    private List<String[]> parseFile(MultipartFile file) throws Exception {
+        String fileName = file.getOriginalFilename();
+        if (fileName == null) {
+            throw new RuntimeException("文件名不能为空");
+        }
+
+        if (fileName.endsWith(".csv")) {
+            return parseCsv(file);
+        } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+            return parseExcel(file);
+        } else {
+            throw new RuntimeException("不支持的文件格式，仅支持 .csv, .xlsx, .xls");
+        }
+    }
+
+    private List<String[]> parseCsv(MultipartFile file) throws Exception {
+        List<String[]> rows = new ArrayList<>();
+        try (CSVReader reader = new CSVReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+            String[] nextLine;
+            while ((nextLine = reader.readNext()) != null) {
+                rows.add(nextLine);
+            }
+        }
+        return rows;
+    }
+
+    private List<String[]> parseExcel(MultipartFile file) throws Exception {
+        List<String[]> rows = new ArrayList<>();
+        Workbook workbook = null;
+        try {
+            String fileName = file.getOriginalFilename();
+            if (fileName.endsWith(".xlsx")) {
+                workbook = new XSSFWorkbook(file.getInputStream());
+            } else {
+                workbook = new HSSFWorkbook(file.getInputStream());
+            }
+
+            Sheet sheet = workbook.getSheetAt(0);
+            for (Row row : sheet) {
+                String[] rowData = new String[row.getLastCellNum()];
+                for (int i = 0; i < row.getLastCellNum(); i++) {
+                    Cell cell = row.getCell(i, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                    switch (cell.getCellType()) {
+                        case STRING:
+                            rowData[i] = cell.getStringCellValue();
+                            break;
+                        case NUMERIC:
+                            if (DateUtil.isCellDateFormatted(cell)) {
+                                rowData[i] = cell.getDateCellValue().toString();
+                            } else {
+                                rowData[i] = String.valueOf(cell.getNumericCellValue());
+                            }
+                            break;
+                        case BOOLEAN:
+                            rowData[i] = String.valueOf(cell.getBooleanCellValue());
+                            break;
+                        default:
+                            rowData[i] = "";
+                    }
+                }
+                rows.add(rowData);
+            }
+        } finally {
+            if (workbook != null) {
+                workbook.close();
+            }
+        }
+        return rows;
+    }
+
+    private String buildInsertSql(String tableName, String[] headers) {
+        StringBuilder sql = new StringBuilder("INSERT INTO ");
+        sql.append(tableName).append(" (");
+        for (int i = 0; i < headers.length; i++) {
+            sql.append(headers[i].trim());
+            if (i < headers.length - 1) {
+                sql.append(", ");
+            }
+        }
+        sql.append(") VALUES (");
+        for (int i = 0; i < headers.length; i++) {
+            sql.append("?");
+            if (i < headers.length - 1) {
+                sql.append(", ");
+            }
+        }
+        sql.append(")");
+        return sql.toString();
+    }
+
+    private void setParameters(PreparedStatement ps, String[] row, String[] headers, Map<String, ColumnInfoDTO> columnMap) throws SQLException {
+        for (int i = 0; i < headers.length; i++) {
+            String header = headers[i].trim();
+            ColumnInfoDTO col = columnMap.get(header.toLowerCase());
+            String value = (i < row.length) ? row[i] : null;
+
+            if (value == null || value.trim().isEmpty()) {
+                ps.setNull(i + 1, Types.VARCHAR);
+            } else {
+                // 根据数据类型设置参数
+                String dataType = col.getDataType().toUpperCase();
+                if (dataType.contains("INT") || dataType.contains("DECIMAL") || dataType.contains("DOUBLE") || dataType.contains("FLOAT")) {
+                    try {
+                        ps.setDouble(i + 1, Double.parseDouble(value.trim()));
+                    } catch (NumberFormatException e) {
+                        ps.setString(i + 1, value.trim());
+                    }
+                } else if (dataType.contains("DATE") || dataType.contains("TIME")) {
+                    ps.setString(i + 1, value.trim());
+                } else {
+                    ps.setString(i + 1, value.trim());
+                }
+            }
+        }
     }
 
     private Connection createJdbcConnection(DatabaseConnection conn) throws SQLException {

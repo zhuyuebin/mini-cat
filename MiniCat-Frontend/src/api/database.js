@@ -119,3 +119,29 @@ export function getConnectionPoolStatus(id, database) {
     params: { database }
   })
 }
+
+// 创建表
+export function createTable(id, database, data) {
+  return request({
+    url: `/database/connections/${id}/create-table`,
+    method: 'post',
+    params: { database },
+    data
+  })
+}
+
+// 批量导入数据
+export function importData(id, database, table, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  
+  return request({
+    url: `/database/connections/${id}/import-data`,
+    method: 'post',
+    params: { database, table },
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}

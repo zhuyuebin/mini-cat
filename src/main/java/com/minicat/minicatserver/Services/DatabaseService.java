@@ -3,6 +3,8 @@ package com.minicat.minicatserver.Services;
 import com.minicat.minicatserver.dto.QueryResultDTO;
 import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
+import com.minicat.minicatserver.dto.CreateTableDTO;
+import com.minicat.minicatserver.dto.ImportResult;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 
 import java.util.List;
@@ -35,4 +37,8 @@ public interface DatabaseService {
     Map<String, Object> getDatabaseInfo(String connectionId, String databaseName);
 
     Map<String, Object> getConnectionPoolStatus(String connectionId, String databaseName);
+
+    boolean createTable(String connectionId, String databaseName, CreateTableDTO createTableDTO);
+
+    ImportResult importData(String connectionId, String databaseName, String tableName, org.springframework.web.multipart.MultipartFile file);
 }

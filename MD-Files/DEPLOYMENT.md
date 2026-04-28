@@ -12,7 +12,7 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 2. 赋予执行权限
@@ -26,14 +26,14 @@ chmod +x start.sh
 
 ```bash
 # 1. 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 2. 双击运行
 start.bat
 ```
 
-**访问**: http://localhost:8080
+**访问**: http://localhost:8888
 
 ---
 
@@ -48,7 +48,7 @@ start.bat
 
 ```bash
 # 1. 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 2. 一键启动
@@ -75,7 +75,7 @@ docker-compose pull
 docker-compose up -d --build
 ```
 
-**访问**: http://localhost:8080
+**访问**: http://localhost:8888
 
 ---
 
@@ -90,7 +90,7 @@ docker-compose up -d --build
 
 ```bash
 # 1. 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
 # 2. 构建项目
@@ -253,7 +253,7 @@ server {
     server_name minicat.example.com;
 
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:8888;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -274,8 +274,8 @@ server {
     ServerName minicat.example.com
     
     ProxyPreserveHost On
-    ProxyPass / http://localhost:8080/
-    ProxyPassReverse / http://localhost:8080/
+    ProxyPass / http://localhost:8888/
+    ProxyPassReverse / http://localhost:8888/
 </VirtualHost>
 ```
 
@@ -324,7 +324,7 @@ journalctl -u minicat -f
 ### 健康检查
 
 ```bash
-curl http://localhost:8080/actuator/health
+curl http://localhost:8888/actuator/health
 ```
 
 ---
@@ -335,8 +335,8 @@ curl http://localhost:8080/actuator/health
 
 ```bash
 # 查找占用端口的进程
-lsof -i :8080
-netstat -tlnp | grep 8080
+lsof -i :8888
+netstat -tlnp | grep 8888
 
 # 杀死进程
 kill -9 <PID>
@@ -361,7 +361,7 @@ telnet your-db-host 3306
 ## 📞 获取帮助
 
 - 查看文档: [README.md](README.md)
-- 提交问题: [Issues](https://gitee.com/your-username/MiniCat/issues)
+- 提交问题: [Issues](https://gitee.com/zhuyuebin/mini-cat/issues)
 
 ---
 

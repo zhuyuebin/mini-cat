@@ -67,12 +67,14 @@ echo =========================================
 echo   启动MiniCat...
 echo =========================================
 echo.
-echo 访问地址: http://localhost:8080
+echo 访问地址: http://localhost:8888
+echo.
+echo 提示: 首次启动需要下载依赖,可能需要几分钟
 echo.
 echo 按 Ctrl+C 停止服务
 echo.
 
-REM 启动应用
-java -jar "%JAR_FILE%"
+REM 启动应用 (配置JVM参数)
+java -Xms512m -Xmx1024m -jar "%JAR_FILE%"
 
 pause

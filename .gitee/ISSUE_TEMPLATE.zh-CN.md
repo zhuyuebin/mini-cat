@@ -52,7 +52,7 @@ MiniCat 是一个基于 Web 的轻量级数据库管理工具,提供直观的图
 
 ```bash
 # 克隆项目
-git clone https://gitee.com/your-username/MiniCat.git
+git clone https://gitee.com/zhuyuebin/mini-cat.git
 
 # 进入目录
 cd MiniCat
@@ -69,7 +69,7 @@ start.bat   # Windows
 
 ## 使用说明
 
-启动后访问: http://localhost:8080
+启动后访问: http://localhost:8888
 
 详细使用指南请参考 [USAGE.md](USAGE.md)
 
@@ -94,8 +94,8 @@ start.bat   # Windows
 
 ## 联系方式
 
-- 项目地址: https://gitee.com/your-username/MiniCat
-- 问题反馈: https://gitee.com/your-username/MiniCat/issues
+- 项目地址: https://gitee.com/zhuyuebin/mini-cat
+- 问题反馈: https://gitee.com/zhuyuebin/mini-cat/issues
 
 ---
 

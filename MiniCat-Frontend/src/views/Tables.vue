@@ -3,11 +3,12 @@
     <!-- 顶部工具栏 -->
     <el-card class="toolbar-card" shadow="never">
       <div class="toolbar-content">
+        <!-- 左侧：数据库选择 -->
         <div class="toolbar-left">
           <el-select
             v-model="selectedConnectionId"
             placeholder="选择数据库连接"
-            style="width: 200px; margin-right: 12px"
+            style="width: 200px"
             @change="handleConnectionChange"
           >
             <el-option
@@ -34,26 +35,47 @@
           </el-select>
         </div>
         
-        <div class="toolbar-right" v-if="selectedTable">
-          <el-tag size="small" type="info" class="table-tag">
-            <el-icon><Files /></el-icon>
-            {{ selectedTable.tableName }}
-          </el-tag>
-          <el-divider direction="vertical" />
-          <el-button-group>
-            <el-button type="primary" size="default" @click="loadTableData" :loading="dataLoading">
-              <el-icon><Download /></el-icon>
-              <span>加载数据</span>
-            </el-button>
-            <el-button type="success" size="default" @click="showAddRowDialog" :disabled="!selectedTable">
+        <!-- 右侧：操作按钮区 -->
+        <div class="toolbar-right">
+          <!-- 表级操作按钮 -->
+          <div class="button-group" v-if="selectedDatabase">
+            <el-button type="primary" @click="showCreateTableDialog">
               <el-icon><Plus /></el-icon>
-              <span>新增行</span>
+              <span>新建表</span>
             </el-button>
-            <el-button type="warning" size="default" @click="executeCustomSQL" :disabled="!selectedTable">
-              <el-icon><Edit /></el-icon>
-              <span>自定义SQL</span>
+            <el-button 
+              type="success" 
+              @click="showImportDialog" 
+              :disabled="!selectedTable"
+              :style="{ marginLeft: '8px' }"
+            >
+              <el-icon><Upload /></el-icon>
+              <span>批量导入</span>
             </el-button>
-          </el-button-group>
+          </div>
+          
+          <!-- 数据操作按钮组 -->
+          <template v-if="selectedTable">
+            <el-divider direction="vertical" style="height: 24px; margin: 0 12px" />
+            <el-tag size="small" type="info" class="table-tag">
+              <el-icon><Files /></el-icon>
+              {{ selectedTable.tableName }}
+            </el-tag>
+            <el-button-group style="margin-left: 12px">
+              <el-button type="primary" @click="loadTableData" :loading="dataLoading">
+                <el-icon><Download /></el-icon>
+                <span>加载数据</span>
+              </el-button>
+              <el-button type="success" @click="showAddRowDialog">
+                <el-icon><Plus /></el-icon>
+                <span>新增行</span>
+              </el-button>
+              <el-button type="warning" @click="executeCustomSQL">
+                <el-icon><Edit /></el-icon>
+                <span>自定义SQL</span>
+              </el-button>
+            </el-button-group>
+          </template>
         </div>
       </div>
     </el-card>
@@ -322,14 +344,167 @@
         <el-button type="primary" @click="submitCustomSQL">执行</el-button>
       </template>
     </el-dialog>
+
+    <!-- 创建表对话框 -->
+    <el-dialog
+      v-model="createTableDialogVisible"
+      title="创建新表"
+      width="900px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="100px">
+        <el-form-item label="表名">
+          <el-input
+            v-model="newTableForm.tableName"
+            placeholder="请输入表名，例如: users"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="表注释">
+          <el-input
+            v-model="newTableForm.tableComment"
+            placeholder="请输入表注释（可选）"
+            clearable
+          />
+        </el-form-item>
+        
+        <el-divider>列定义</el-divider>
+        
+        <el-table :data="newTableForm.columns" border size="small" max-height="400">
+          <el-table-column label="列名" width="120">
+            <template #default="{ row }">
+              <el-input v-model="row.columnName" placeholder="列名" size="small" />
+            </template>
+          </el-table-column>
+          <el-table-column label="数据类型" width="130">
+            <template #default="{ row }">
+              <el-select v-model="row.dataType" size="small" style="width: 100%">
+                <el-option
+                  v-for="type in dataTypes"
+                  :key="type"
+                  :label="type"
+                  :value="type"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="长度" width="80">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.length"
+                :min="1"
+                :max="9999"
+                size="small"
+                controls-position="right"
+                style="width: 100%"
+                :disabled="!['VARCHAR', 'CHAR', 'DECIMAL'].includes(row.dataType)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="可空" width="70" align="center">
+            <template #default="{ row }">
+              <el-checkbox v-model="row.nullable" />
+            </template>
+          </el-table-column>
+          <el-table-column label="主键" width="70" align="center">
+            <template #default="{ row }">
+              <el-checkbox v-model="row.primaryKey" />
+            </template>
+          </el-table-column>
+          <el-table-column label="自增" width="70" align="center">
+            <template #default="{ row }">
+              <el-checkbox v-model="row.autoIncrement" :disabled="row.dataType !== 'INT' && row.dataType !== 'BIGINT'" />
+            </template>
+          </el-table-column>
+          <el-table-column label="默认值" width="100">
+            <template #default="{ row }">
+              <el-input v-model="row.defaultValue" placeholder="默认值" size="small" />
+            </template>
+          </el-table-column>
+          <el-table-column label="注释" min-width="120">
+            <template #default="{ row }">
+              <el-input v-model="row.comment" placeholder="注释" size="small" />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="70" align="center" fixed="right">
+            <template #default="{ $index }">
+              <el-button
+                type="danger"
+                size="small"
+                link
+                @click="removeColumn($index)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        
+        <div style="margin-top: 12px; text-align: center;">
+          <el-button type="primary" size="small" @click="addColumn">
+            <el-icon><Plus /></el-icon>
+            添加列
+          </el-button>
+        </div>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="createTableDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitCreateTable">创建表</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量导入对话框 -->
+    <el-dialog
+      v-model="importDialogVisible"
+      title="批量导入数据"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-alert
+        title="导入说明"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 16px"
+      >
+        <p>1. 支持 Excel (.xlsx, .xls) 和 CSV (.csv) 格式文件</p>
+        <p>2. 文件第一行必须是表头，且必须与数据库表字段名严格匹配</p>
+        <p>3. 如果有任何一列不匹配，导入将会失败并提示具体错误</p>
+      </el-alert>
+      
+      <el-upload
+        class="upload-demo"
+        drag
+        action="#"
+        :auto-upload="false"
+        :on-change="handleFileChange"
+        :limit="1"
+        accept=".xlsx,.xls,.csv"
+      >
+        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+        <div class="el-upload__text">
+          将文件拖到此处，或<em>点击上传</em>
+        </div>
+        <template #tip>
+          <div class="el-upload__tip">
+            仅支持 .xlsx / .xls / .csv 文件
+          </div>
+        </template>
+      </el-upload>
+
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitImport" :loading="importing">开始导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Files, Download, Grid, Document, Coin, List, Key, Lock, Collection, DataLine, InfoFilled, Plus, Edit } from '@element-plus/icons-vue'
-import { getAllConnections, getDatabases, getTables, getColumns, executeQuery, executeUpdate } from '@/api/database'
+import { Files, Download, Grid, Document, Coin, List, Key, Lock, Collection, DataLine, InfoFilled, Plus, Edit, Upload, UploadFilled } from '@element-plus/icons-vue'
+import { getAllConnections, getDatabases, getTables, getColumns, executeQuery, executeUpdate, createTable, importData } from '@/api/database'
 
 const connections = ref([])
 const databases = ref([])
@@ -353,6 +528,32 @@ const customSQLDialogVisible = ref(false)
 const customSQL = ref('')
 const addRowDialogVisible = ref(false)
 const newRowData = ref({})
+const createTableDialogVisible = ref(false)
+const importDialogVisible = ref(false)
+const importing = ref(false)
+const importFile = ref(null)
+const newTableForm = ref({
+  tableName: '',
+  tableComment: '',
+  columns: [
+    {
+      columnName: 'id',
+      dataType: 'INT',
+      nullable: false,
+      primaryKey: true,
+      autoIncrement: true,
+      length: null,
+      defaultValue: '',
+      comment: '主键ID'
+    }
+  ]
+})
+
+// 常用的数据类型
+const dataTypes = [
+  'INT', 'BIGINT', 'VARCHAR', 'TEXT', 'DECIMAL', 'DOUBLE', 'FLOAT',
+  'BOOLEAN', 'DATE', 'DATETIME', 'TIMESTAMP', 'CHAR', 'LONGTEXT'
+]
 
 // 加载连接列表
 const loadConnections = async () => {
@@ -673,6 +874,133 @@ const submitCustomSQL = async () => {
   }
 }
 
+// 显示创建表对话框
+const showCreateTableDialog = () => {
+  newTableForm.value = {
+    tableName: '',
+    tableComment: '',
+    columns: [
+      {
+        columnName: 'id',
+        dataType: 'INT',
+        nullable: false,
+        primaryKey: true,
+        autoIncrement: true,
+        length: null,
+        defaultValue: '',
+        comment: '主键ID'
+      }
+    ]
+  }
+  createTableDialogVisible.value = true
+}
+
+// 添加列
+const addColumn = () => {
+  newTableForm.value.columns.push({
+    columnName: '',
+    dataType: 'VARCHAR',
+    nullable: true,
+    primaryKey: false,
+    autoIncrement: false,
+    length: 255,
+    defaultValue: '',
+    comment: ''
+  })
+}
+
+// 删除列
+const removeColumn = (index) => {
+  if (newTableForm.value.columns.length <= 1) {
+    ElMessage.warning('至少需要保留一个列')
+    return
+  }
+  newTableForm.value.columns.splice(index, 1)
+}
+
+// 提交创建表
+const submitCreateTable = async () => {
+  // 验证表单
+  if (!newTableForm.value.tableName.trim()) {
+    ElMessage.warning('请输入表名')
+    return
+  }
+
+  // 验证列名
+  for (let i = 0; i < newTableForm.value.columns.length; i++) {
+    const col = newTableForm.value.columns[i]
+    if (!col.columnName.trim()) {
+      ElMessage.warning(`第 ${i + 1} 行的列名不能为空`)
+      return
+    }
+  }
+
+  try {
+    await createTable(
+      selectedConnectionId.value,
+      selectedDatabase.value,
+      newTableForm.value
+    )
+    
+    ElMessage.success('表创建成功')
+    createTableDialogVisible.value = false
+    
+    // 刷新表列表
+    handleDatabaseChange(selectedDatabase.value)
+  } catch (error) {
+    ElMessage.error('创建表失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// 显示导入对话框
+const showImportDialog = () => {
+  if (!selectedTable.value) {
+    ElMessage.warning('请先选择一个数据表')
+    return
+  }
+  importFile.value = null
+  importDialogVisible.value = true
+}
+
+// 处理文件选择
+const handleFileChange = (file) => {
+  importFile.value = file.raw
+}
+
+// 提交导入
+const submitImport = async () => {
+  if (!importFile.value) {
+    ElMessage.warning('请选择要导入的文件')
+    return
+  }
+
+  importing.value = true
+  try {
+    const res = await importData(
+      selectedConnectionId.value,
+      selectedDatabase.value,
+      selectedTable.value.tableName,
+      importFile.value
+    )
+    
+    const result = res.data
+    if (result.success) {
+      ElMessage.success(result.message)
+      importDialogVisible.value = false
+      // 刷新数据
+      if (activeTab.value === 'data') {
+        loadTableData()
+      }
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch (error) {
+    ElMessage.error('导入失败: ' + (error.response?.data?.message || error.message))
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(() => {
   loadConnections()
 })
@@ -708,15 +1036,43 @@ onMounted(() => {
         gap: 12px;
       }
       
+      .toolbar-left {
+        // 左侧选择器样式
+      }
+      
       .toolbar-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        
+        .button-group {
+          display: flex;
+          align-items: center;
+        }
+        
         .table-tag {
           padding: 6px 12px;
           font-weight: 500;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          
+          .el-icon {
+            font-size: 14px;
+          }
         }
         
         .el-divider--vertical {
-          margin: 0 4px;
           height: 24px;
+          margin: 0;
+        }
+        
+        :deep(.el-button-group) {
+          .el-button {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          }
         }
       }
     }

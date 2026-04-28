@@ -58,7 +58,7 @@ cd MiniCat
 start.bat
 ```
 
-启动成功后，访问: **http://localhost:8080**
+启动成功后，访问: **http://localhost:8888**
 
 ---
 
@@ -83,7 +83,7 @@ docker-compose logs -f
 docker-compose down
 ```
 
-访问: **http://localhost:8080**
+访问: **http://localhost:8888**
 
 ---
 
@@ -109,7 +109,7 @@ mvn clean package -DskipTests
 java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
 ```
 
-访问: **http://localhost:8080**
+访问: **http://localhost:8888**
 
 ---
 
@@ -131,7 +131,7 @@ npm run dev
 ```
 
 前端访问: **http://localhost:5173**  
-后端API: **http://localhost:8080**
+后端API: **http://localhost:8888**
 
 ---
 

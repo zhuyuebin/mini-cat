@@ -13,7 +13,7 @@ start.bat
 docker-compose up -d
 ```
 
-访问: http://localhost:8080
+访问: http://localhost:8888
 
 ---
 
@@ -97,7 +97,7 @@ MiniCat/
 
 ## 🌐 默认端口
 
-- 后端API: 8080
+- 后端API: 8888
 - 前端开发: 5173
 - MySQL: 3306
 - PostgreSQL: 5432
@@ -129,10 +129,10 @@ java -version
 ### 检查端口占用
 ```bash
 # Linux/Mac
-lsof -i :8080
+lsof -i :8888
 
 # Windows
-netstat -ano | findstr :8080
+netstat -ano | findstr :8888
 ```
 
 ### 查看日志

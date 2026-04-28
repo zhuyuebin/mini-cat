@@ -52,6 +52,15 @@
               <el-icon><Upload /></el-icon>
               <span>批量导入</span>
             </el-button>
+            <el-button 
+              type="danger" 
+              @click="handleDeleteTable" 
+              :disabled="!selectedTable"
+              :style="{ marginLeft: '8px' }"
+            >
+              <el-icon><Delete /></el-icon>
+              <span>删除表</span>
+            </el-button>
           </div>
           
           <!-- 数据操作按钮组 -->
@@ -390,13 +399,10 @@
           </el-table-column>
           <el-table-column label="长度" width="80">
             <template #default="{ row }">
-              <el-input-number
+              <el-input
                 v-model="row.length"
-                :min="1"
-                :max="9999"
                 size="small"
-                controls-position="right"
-                style="width: 100%"
+                placeholder="长度"
                 :disabled="!['VARCHAR', 'CHAR', 'DECIMAL'].includes(row.dataType)"
               />
             </template>
@@ -503,8 +509,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Files, Download, Grid, Document, Coin, List, Key, Lock, Collection, DataLine, InfoFilled, Plus, Edit, Upload, UploadFilled } from '@element-plus/icons-vue'
-import { getAllConnections, getDatabases, getTables, getColumns, executeQuery, executeUpdate, createTable, importData } from '@/api/database'
+import { Files, Download, Grid, Document, Coin, List, Key, Lock, Collection, DataLine, InfoFilled, Plus, Edit, Upload, UploadFilled, Delete } from '@element-plus/icons-vue'
+import { getAllConnections, getDatabases, getTables, getColumns, executeQuery, executeUpdate, createTable, importData, dropTable } from '@/api/database'
 
 const connections = ref([])
 const databases = ref([])
@@ -542,7 +548,7 @@ const newTableForm = ref({
       nullable: false,
       primaryKey: true,
       autoIncrement: true,
-      length: null,
+      length: '',
       defaultValue: '',
       comment: '主键ID'
     }
@@ -903,7 +909,7 @@ const addColumn = () => {
     nullable: true,
     primaryKey: false,
     autoIncrement: false,
-    length: 255,
+    length: '255',
     defaultValue: '',
     comment: ''
   })
@@ -998,6 +1004,46 @@ const submitImport = async () => {
     ElMessage.error('导入失败: ' + (error.response?.data?.message || error.message))
   } finally {
     importing.value = false
+  }
+}
+
+// 删除表
+const handleDeleteTable = async () => {
+  if (!selectedTable.value) {
+    ElMessage.warning('请先选择一个数据表')
+    return
+  }
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除表 "${selectedTable.value.tableName}" 吗？此操作不可恢复！`,
+      '警告',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return // 用户取消
+  }
+  
+  try {
+    await dropTable(
+      selectedConnectionId.value,
+      selectedDatabase.value,
+      selectedTable.value.tableName
+    )
+    
+    ElMessage.success('表删除成功')
+    
+    // 刷新表列表
+    handleDatabaseChange(selectedDatabase.value)
+    
+    // 清空选中的表
+    selectedTable.value = null
+  } catch (error) {
+    ElMessage.error('删除表失败: ' + (error.response?.data?.message || error.message))
   }
 }
 

@@ -145,3 +145,12 @@ export function importData(id, database, table, file) {
     }
   })
 }
+
+// 删除表
+export function dropTable(id, database, table) {
+  return request({
+    url: `/database/connections/${id}/tables`,
+    method: 'delete',
+    params: { database, table }
+  })
+}

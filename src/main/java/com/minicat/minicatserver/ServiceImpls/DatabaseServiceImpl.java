@@ -419,8 +419,10 @@ public class DatabaseServiceImpl implements DatabaseService {
             validation = sqlInjectionValidator.validateInsert(sql);
         } else if (upperSql.startsWith("UPDATE") || upperSql.startsWith("DELETE")) {
             validation = sqlInjectionValidator.validateUpdate(sql);
+        } else if (upperSql.startsWith("DROP TABLE")) {
+            validation = sqlInjectionValidator.validateDropTable(sql);
         } else {
-            throw new RuntimeException("不支持的SQL操作类型，仅支持INSERT、UPDATE、DELETE");
+            throw new RuntimeException("不支持的SQL操作类型，仅支持INSERT、UPDATE、DELETE、DROP TABLE");
         }
         
         if (!validation.isValid()) {
@@ -703,6 +705,35 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
 
         return result;
+    }
+
+    @Override
+    public boolean dropTable(String connectionId, String databaseName, String tableName) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new RuntimeException("连接不存在");
+        }
+
+        if (tableName == null || tableName.trim().isEmpty()) {
+            throw new RuntimeException("表名不能为空");
+        }
+
+        // 构建 DROP TABLE SQL
+        String dropSql = "DROP TABLE " + tableName;
+        System.out.println("[DEBUG] Dropping table with SQL: " + dropSql);
+
+        try (Connection c = createJdbcConnection(conn, databaseName);
+             Statement stmt = c.createStatement()) {
+            
+            stmt.executeUpdate(dropSql);
+            System.out.println("[DEBUG] Table dropped successfully: " + tableName);
+            return true;
+
+        } catch (SQLException e) {
+            System.err.println("[ERROR] Failed to drop table: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("删除表失败: " + e.getMessage(), e);
+        }
     }
 
     private List<String[]> parseFile(MultipartFile file) throws Exception {

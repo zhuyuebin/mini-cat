@@ -41,4 +41,6 @@ public interface DatabaseService {
     boolean createTable(String connectionId, String databaseName, CreateTableDTO createTableDTO);
 
     ImportResult importData(String connectionId, String databaseName, String tableName, org.springframework.web.multipart.MultipartFile file);
+
+    boolean dropTable(String connectionId, String databaseName, String tableName);
 }

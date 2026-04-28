@@ -158,4 +158,12 @@ public class DatabaseController {
         ImportResult result = databaseService.importData(id, database, table, file);
         return ApiResponseDTO.success(result);
     }
+
+    @DeleteMapping("/connections/{id}/tables")
+    public ApiResponseDTO<Boolean> dropTable(@PathVariable String id,
+                                             @RequestParam String database,
+                                             @RequestParam String table) {
+        boolean success = databaseService.dropTable(id, database, table);
+        return ApiResponseDTO.success(success);
+    }
 }

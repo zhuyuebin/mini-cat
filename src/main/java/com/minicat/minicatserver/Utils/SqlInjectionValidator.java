@@ -206,6 +206,68 @@ public class SqlInjectionValidator {
     }
     
     /**
+     * 验证DROP TABLE语句是否安全
+     * @param sql SQL语句
+     * @return 验证结果
+     */
+    public SqlValidationResult validateDropTable(String sql) {
+        if (sql == null || sql.trim().isEmpty()) {
+            return new SqlValidationResult(false, "SQL语句不能为空");
+        }
+        
+        String trimmedSql = sql.trim();
+        String upperSql = trimmedSql.toUpperCase();
+        
+        // 只允许DROP TABLE语句
+        if (!upperSql.startsWith("DROP TABLE")) {
+            return new SqlValidationResult(false, 
+                "只允许执行DROP TABLE语句");
+        }
+        
+        // 检查是否包含多个语句（防止批量执行）
+        if (trimmedSql.contains(";") && trimmedSql.indexOf(";") < trimmedSql.length() - 1) {
+            return new SqlValidationResult(false, 
+                "不允许执行多条SQL语句");
+        }
+        
+        // 检查是否包含危险模式
+        List<String> dropDangerousPatterns = Arrays.asList(
+            "/\\*", "\\*/",         // 多行注释
+            "xp_",                   // SQL Server扩展存储过程
+            "sp_",                   // SQL Server存储过程
+            "exec\\(", "execute\\(",     // 执行命令
+            "union\\s+select",       // UNION注入
+            "insert\\s+into",        // INSERT注入
+            "update\\s+.*\\bset\\b",       // UPDATE注入
+            "drop\\s+database",      // DROP DATABASE
+            "alter\\s+table",        // ALTER TABLE
+            "create\\s+table",       // CREATE TABLE
+            "grant\\s+",             // GRANT权限
+            "revoke\\s+",            // REVOKE权限
+            "load_file",             // MySQL文件读取
+            "into\\s+outfile",       // MySQL文件写入
+            "into\\s+dumpfile",      // MySQL文件写入
+            "benchmark\\(",          // 时间盲注
+            "sleep\\(",              // 时间盲注
+            "waitfor\\s+delay",      // SQL Server时间盲注
+            "information_schema",    // 信息模式访问
+            "sys\\.tables",          // 系统表访问
+            "pg_catalog",            // PostgreSQL系统目录
+            "dbms_\\w+"              // Oracle DBMS函数
+        );
+        
+        for (String patternStr : dropDangerousPatterns) {
+            Pattern pattern = Pattern.compile(patternStr, Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+            if (pattern.matcher(trimmedSql).find()) {
+                return new SqlValidationResult(false, 
+                    "检测到潜在的SQL注入攻击: 禁止使用危险SQL操作");
+            }
+        }
+        
+        return new SqlValidationResult(true, "SQL验证通过");
+    }
+    
+    /**
      * SQL验证结果
      */
     public static class SqlValidationResult {

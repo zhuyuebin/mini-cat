@@ -27,7 +27,9 @@ REM Check if Maven is installed
 where mvn >nul 2>nul
 if %errorlevel% neq 0 (
     echo [WARN] Maven not found, using Maven Wrapper
-    set MAVEN_CMD=mvnw.cmd
+    REM Use full path for mvnw.cmd to ensure it's found
+    set "SCRIPT_DIR=%~dp0"
+    set MAVEN_CMD="%SCRIPT_DIR%mvnw.cmd"
 ) else (
     set MAVEN_CMD=mvn
     echo [OK] Maven installed

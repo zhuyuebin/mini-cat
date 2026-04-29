@@ -49,16 +49,30 @@ chmod +x start.sh
 ```
 
 #### Windows 用户
+
+**重要提示：** 请使用 `start_win.bat` 而不是 `start.bat`
+
 ```bash
 # 克隆项目
 git clone https://gitee.com/zhuyuebin/mini-cat.git
 cd MiniCat
 
-# 双击运行或在命令行执行
-start.bat
+# 双击运行或在命令行执行（推荐使用 start_win.bat）
+start_win.bat
+```
+
+或者手动执行：
+```bash
+# 使用 Maven Wrapper 构建（注意：不要写成 mvnw.cmd mvn clean package）
+mvnw.cmd clean package -DskipTests
+
+# 运行应用
+java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
 ```
 
 启动成功后，访问: **http://localhost:8888**
+
+📝 **Windows 用户详细指南**: 查看 [WINDOWS_START_GUIDE.md](WINDOWS_START_GUIDE.md)
 
 ---
 

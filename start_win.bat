@@ -30,6 +30,7 @@ if %errorlevel% neq 0 (
     REM Use full path for mvnw.cmd to ensure it's found
     set "SCRIPT_DIR=%~dp0"
     set MAVEN_CMD="%SCRIPT_DIR%mvnw.cmd"
+    echo [INFO] Using Maven Wrapper from: %MAVEN_CMD%
 ) else (
     set MAVEN_CMD=mvn
     echo [OK] Maven installed
@@ -37,13 +38,28 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Building project...
+echo Command: %MAVEN_CMD% clean package -DskipTests
 echo.
 
 REM Build project
 call %MAVEN_CMD% clean package -DskipTests
 
 if %errorlevel% neq 0 (
+    echo.
+    echo =========================================
     echo [ERROR] Build failed!
+    echo =========================================
+    echo.
+    echo Common reasons:
+    echo   1. Java version is not 17 or higher
+    echo   2. Network issues (cannot download dependencies)
+    echo   3. Maven Wrapper not initialized (first run takes longer)
+    echo.
+    echo Try running manually:
+    echo   mvnw.cmd clean package -DskipTests
+    echo.
+    echo For more help, see WINDOWS_START_GUIDE.md
+    echo =========================================
     pause
     exit /b 1
 )

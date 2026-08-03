@@ -135,7 +135,7 @@
                             <goal>npm</goal>
                         </goals>
                         <configuration>
-                            <arguments>install</arguments>
+                            <arguments>install --registry=https://registry.npmmirror.com</arguments>
                         </configuration>
                     </execution>
                     <execution>

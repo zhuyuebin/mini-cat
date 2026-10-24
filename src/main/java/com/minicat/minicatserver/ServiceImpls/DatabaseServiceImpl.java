@@ -7,6 +7,11 @@ import com.minicat.minicatserver.Utils.SqlInjectionValidator;
 import com.minicat.minicatserver.dto.*;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.entity.DatabaseConnectionEntity;
+import com.minicat.minicatserver.exception.ConnectionNotFoundException;
+import com.minicat.minicatserver.exception.DatabaseException;
+import com.minicat.minicatserver.exception.QueryExecutionException;
+import com.minicat.minicatserver.exception.SqlInjectionException;
+import com.minicat.minicatserver.exception.ValidationException;
 import com.minicat.minicatserver.repository.DatabaseConnectionRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -97,25 +102,25 @@ public class DatabaseServiceImpl implements DatabaseService {
     public DatabaseConnection addConnection(DatabaseConnection connection) {
         // 参数验证
         if (connection == null) {
-            throw new IllegalArgumentException("Connection cannot be null");
+            throw new ValidationException("连接信息不能为空");
         }
         if (connection.getName() == null || connection.getName().trim().isEmpty()) {
-            throw new IllegalArgumentException("Connection name is required");
+            throw new ValidationException("连接名称不能为空");
         }
         if (connection.getHost() == null || connection.getHost().trim().isEmpty()) {
-            throw new IllegalArgumentException("Host is required");
+            throw new ValidationException("主机地址不能为空");
         }
         if (connection.getPort() == null || connection.getPort() <= 0) {
-            throw new IllegalArgumentException("Valid port is required");
+            throw new ValidationException("端口号必须大于 0");
         }
         if (connection.getUsername() == null || connection.getUsername().trim().isEmpty()) {
-            throw new IllegalArgumentException("Username is required");
+            throw new ValidationException("用户名不能为空");
         }
         if (connection.getPassword() == null || connection.getPassword().trim().isEmpty()) {
-            throw new IllegalArgumentException("Password is required");
+            throw new ValidationException("密码不能为空");
         }
         if (connection.getDatabaseType() == null || connection.getDatabaseType().trim().isEmpty()) {
-            throw new IllegalArgumentException("Database type is required");
+            throw new ValidationException("数据库类型不能为空");
         }
         
         // 确保不设置 ID，让 JPA 自动生成
@@ -250,7 +255,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public List<String> getDatabases(String connectionId) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         List<String> databases = new ArrayList<>();
@@ -264,7 +269,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 databases.add(rs.getString(1));
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get databases: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取数据库列表失败", e);
         }
 
         return databases;
@@ -274,7 +279,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public List<TableInfoDTO> getTables(String connectionId, String databaseName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         List<TableInfoDTO> tables = new ArrayList<>();
@@ -308,7 +313,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 tables.add(tableInfo);
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get tables: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取表列表失败", e);
         }
 
         return tables;
@@ -318,7 +323,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public List<ColumnInfoDTO> getColumns(String connectionId, String databaseName, String tableName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         List<ColumnInfoDTO> columns = new ArrayList<>();
@@ -357,7 +362,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             }
 
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get columns: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取列信息失败", e);
         }
 
         return columns;
@@ -367,13 +372,13 @@ public class DatabaseServiceImpl implements DatabaseService {
     public QueryResultDTO executeQuery(String connectionId, String databaseName, String sql) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         // SQL注入验证
         SqlInjectionValidator.SqlValidationResult validation = sqlInjectionValidator.validate(sql);
         if (!validation.isValid()) {
-            throw new RuntimeException("SQL验证失败: " + validation.getMessage());
+            throw new SqlInjectionException(validation.getMessage());
         }
 
         QueryResultDTO result = new QueryResultDTO();
@@ -404,7 +409,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             result.setTotalRows(rows.size());
 
         } catch (SQLException e) {
-            throw new RuntimeException("Query execution failed: " + e.getMessage(), e);
+            throw QueryExecutionException.fromSql(sql, e);
         } finally {
             long endTime = System.currentTimeMillis();
             result.setExecutionTime(endTime - startTime);
@@ -419,7 +424,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public int executeUpdate(String connectionId, String databaseName, String sql) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         // 根据SQL类型选择不同的验证方法
@@ -433,11 +438,11 @@ public class DatabaseServiceImpl implements DatabaseService {
         } else if (upperSql.startsWith("DROP TABLE")) {
             validation = sqlInjectionValidator.validateDropTable(sql);
         } else {
-            throw new RuntimeException("不支持的SQL操作类型，仅支持INSERT、UPDATE、DELETE、DROP TABLE");
+            throw new ValidationException("不支持的SQL操作类型，仅支持 INSERT、UPDATE、DELETE、DROP TABLE");
         }
         
         if (!validation.isValid()) {
-            throw new RuntimeException("SQL验证失败: " + validation.getMessage());
+            throw new SqlInjectionException(validation.getMessage());
         }
 
         try (Connection c = createJdbcConnection(conn, databaseName);
@@ -449,7 +454,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             return affectedRows;
 
         } catch (SQLException e) {
-            throw new RuntimeException("Update execution failed: " + e.getMessage(), e);
+            throw QueryExecutionException.fromSql(sql, e);
         }
     }
 
@@ -457,7 +462,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public Map<String, Object> getDatabaseInfo(String connectionId, String databaseName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         Map<String, Object> info = new HashMap<>();
@@ -472,7 +477,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             info.put("url", metaData.getURL());
 
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get database info: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取数据库信息失败", e);
         }
 
         return info;
@@ -482,7 +487,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public Map<String, Object> getConnectionPoolStatus(String connectionId, String databaseName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         String poolKey = buildPoolKey(conn, databaseName);
@@ -501,15 +506,25 @@ public class DatabaseServiceImpl implements DatabaseService {
     public boolean createTable(String connectionId, String databaseName, CreateTableDTO createTableDTO) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         if (createTableDTO == null || createTableDTO.getTableName() == null || createTableDTO.getTableName().trim().isEmpty()) {
-            throw new RuntimeException("表名不能为空");
+            throw new ValidationException("表名不能为空");
         }
 
         if (createTableDTO.getColumns() == null || createTableDTO.getColumns().isEmpty()) {
-            throw new RuntimeException("至少需要定义一个列");
+            throw new ValidationException("至少需要定义一个列");
+        }
+
+        // 列定义基础校验，避免拼接 SQL 时出现 NPE 或注入
+        for (CreateTableDTO.ColumnDefinition col : createTableDTO.getColumns()) {
+            if (col == null || col.getColumnName() == null || col.getColumnName().trim().isEmpty()) {
+                throw new ValidationException("列名不能为空");
+            }
+            if (col.getDataType() == null || col.getDataType().trim().isEmpty()) {
+                throw new ValidationException("列 " + col.getColumnName() + " 的数据类型不能为空");
+            }
         }
 
         // 构建 CREATE TABLE SQL
@@ -611,7 +626,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (SQLException e) {
             log.error("Failed to create table: connectionId={}, database={}, table={}",
                     connectionId, databaseName, createTableDTO.getTableName(), e);
-            throw new RuntimeException("创建表失败: " + e.getMessage(), e);
+            throw new QueryExecutionException("创建表失败: " + e.getMessage(), e);
         }
     }
 
@@ -619,7 +634,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public ImportResult importData(String connectionId, String databaseName, String tableName, MultipartFile file) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("连接不存在");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         ImportResult result = new ImportResult();
@@ -632,7 +647,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             // 1. 获取表结构
             List<ColumnInfoDTO> columns = getColumns(connectionId, databaseName, tableName);
             if (columns.isEmpty()) {
-                throw new RuntimeException("表不存在或没有列定义");
+                throw new ValidationException("表不存在或没有列定义");
             }
 
             Map<String, ColumnInfoDTO> columnMap = new LinkedHashMap<>();
@@ -643,7 +658,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             // 2. 解析文件
             List<String[]> rows = parseFile(file);
             if (rows.isEmpty()) {
-                throw new RuntimeException("文件中没有数据");
+                throw new ValidationException("文件中没有数据");
             }
 
             // 3. 校验表头
@@ -682,7 +697,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 if (!extraColumns.isEmpty()) {
                     errorMsg.append("多余列: ").append(String.join(", ", extraColumns));
                 }
-                throw new RuntimeException(errorMsg.toString());
+                throw new ValidationException(errorMsg.toString());
             }
 
             // 4. 批量插入数据
@@ -708,16 +723,19 @@ public class DatabaseServiceImpl implements DatabaseService {
                     c.commit();
                 } catch (Exception e) {
                     c.rollback();
-                    throw new RuntimeException("批量插入数据失败: " + e.getMessage(), e);
+                    throw new QueryExecutionException("批量插入数据失败: " + e.getMessage(), e);
                 }
             }
 
             result.setSuccess(true);
             result.setMessage("导入完成。总计: " + result.getTotalRows() + ", 成功: " + result.getSuccessRows() + ", 失败: " + result.getFailedRows());
 
+        } catch (DatabaseException e) {
+            result.setMessage("导入失败: " + e.getMessage());
+            throw e;
         } catch (Exception e) {
             result.setMessage("导入失败: " + e.getMessage());
-            throw new RuntimeException(e.getMessage(), e);
+            throw new QueryExecutionException("导入失败: " + e.getMessage(), e);
         }
 
         return result;
@@ -727,11 +745,11 @@ public class DatabaseServiceImpl implements DatabaseService {
     public boolean dropTable(String connectionId, String databaseName, String tableName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("连接不存在");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         if (tableName == null || tableName.trim().isEmpty()) {
-            throw new RuntimeException("表名不能为空");
+            throw new ValidationException("表名不能为空");
         }
 
         // 构建 DROP TABLE SQL
@@ -749,14 +767,14 @@ public class DatabaseServiceImpl implements DatabaseService {
         } catch (SQLException e) {
             log.error("Failed to drop table: connectionId={}, database={}, table={}",
                     connectionId, databaseName, tableName, e);
-            throw new RuntimeException("删除表失败: " + e.getMessage(), e);
+            throw new QueryExecutionException("删除表失败: " + e.getMessage(), e);
         }
     }
 
     private List<String[]> parseFile(MultipartFile file) throws Exception {
         String fileName = file.getOriginalFilename();
         if (fileName == null) {
-            throw new RuntimeException("文件名不能为空");
+            throw new ValidationException("文件名不能为空");
         }
 
         if (fileName.endsWith(".csv")) {
@@ -764,7 +782,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
             return parseExcel(file);
         } else {
-            throw new RuntimeException("不支持的文件格式，仅支持 .csv, .xlsx, .xls");
+            throw new ValidationException("不支持的文件格式，仅支持 .csv, .xlsx, .xls");
         }
     }
 

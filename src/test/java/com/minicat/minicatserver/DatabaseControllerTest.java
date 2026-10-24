@@ -95,7 +95,61 @@ class DatabaseControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(40001));
+    }
+
+    @Test
+    void unknownConnectionReturns404WithBusinessCode() throws Exception {
+        mockMvc.perform(get("/api/database/connections/not-exists"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(40401));
+
+        mockMvc.perform(delete("/api/database/connections/not-exists"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40401));
+
+        mockMvc.perform(put("/api/database/connections/not-exists")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newConnection("x"))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40401));
+    }
+
+    @Test
+    void blockedSqlReturns403WithBusinessCode() throws Exception {
+        String id = createConnection("it-blocked-sql");
+
+        mockMvc.perform(post("/api/database/connections/{id}/query", id)
+                        .param("database", "demo")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("SELECT * FROM users UNION SELECT * FROM passwords"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(40301));
+    }
+
+    @Test
+    void unsupportedUpdateTypeReturns400WithBusinessCode() throws Exception {
+        String id = createConnection("it-unsupported-update");
+
+        mockMvc.perform(post("/api/database/connections/{id}/update", id)
+                        .param("database", "demo")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("ALTER TABLE users ADD COLUMN age INT"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(40001));
+    }
+
+    private String createConnection(String name) throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/database/connections")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newConnection(name))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return JsonPath.read(created.getResponse().getContentAsString(), "$.data.id");
     }
 
     private static DatabaseConnection newConnection(String name) {

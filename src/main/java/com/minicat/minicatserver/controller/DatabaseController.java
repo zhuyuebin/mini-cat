@@ -8,6 +8,9 @@ import com.minicat.minicatserver.dto.ColumnInfoDTO;
 import com.minicat.minicatserver.dto.CreateTableDTO;
 import com.minicat.minicatserver.dto.ImportResult;
 import com.minicat.minicatserver.entity.DatabaseConnection;
+import com.minicat.minicatserver.exception.ConnectionNotFoundException;
+import com.minicat.minicatserver.exception.DatabaseException;
+import com.minicat.minicatserver.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -36,7 +39,7 @@ public class DatabaseController {
     public ApiResponseDTO<DatabaseConnection> getConnection(@PathVariable String id) {
         DatabaseConnection connection = databaseService.getConnectionById(id);
         if (connection == null) {
-            return ApiResponseDTO.error("Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
         // 移除密码字段，不返回给前端
         connection.setPassword(null);
@@ -54,7 +57,7 @@ public class DatabaseController {
                                                  @RequestBody DatabaseConnection connection) {
         boolean updated = databaseService.updateConnection(id, connection);
         if (!updated) {
-            return ApiResponseDTO.error("Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
         return ApiResponseDTO.success();
     }
@@ -63,7 +66,7 @@ public class DatabaseController {
     public ApiResponseDTO<Void> deleteConnection(@PathVariable String id) {
         boolean deleted = databaseService.deleteConnection(id);
         if (!deleted) {
-            return ApiResponseDTO.error("Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
         return ApiResponseDTO.success();
     }
@@ -72,28 +75,21 @@ public class DatabaseController {
     public ApiResponseDTO<Map<String, Object>> testConnection(@PathVariable String id) {
         DatabaseConnection conn = databaseService.getConnectionById(id);
         if (conn == null) {
-            return ApiResponseDTO.error(404, "Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
-        
+
+        boolean success = databaseService.testConnection(id);
+        if (!success) {
+            throw new DatabaseException(ErrorCode.CONNECTION_FAILED, "连接测试失败，请检查后端日志");
+        }
+
         Map<String, Object> result = new java.util.HashMap<>();
-        try {
-            boolean success = databaseService.testConnection(id);
-            result.put("success", success);
-            result.put("message", success ? "Connection successful" : "Connection failed");
-            result.put("host", conn.getHost());
-            result.put("port", conn.getPort());
-            result.put("database", conn.getDatabaseName());
-            
-            if (!success) {
-                return ApiResponseDTO.error(500, "Connection test failed. Check backend logs for details.");
-            }
-            return ApiResponseDTO.success(result);
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "Error: " + e.getMessage());
-            result.put("error", e.getClass().getSimpleName());
-            return ApiResponseDTO.error(500, "Connection test error: " + e.getMessage());
-        }
+        result.put("success", true);
+        result.put("message", "Connection successful");
+        result.put("host", conn.getHost());
+        result.put("port", conn.getPort());
+        result.put("database", conn.getDatabaseName());
+        return ApiResponseDTO.success(result);
     }
 
     @GetMapping("/connections/{id}/databases")

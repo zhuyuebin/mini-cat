@@ -4,6 +4,9 @@ import com.minicat.minicatserver.Services.DatabaseService;
 import com.minicat.minicatserver.Utils.PasswordEncryptionService;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.entity.DatabaseConnectionEntity;
+import com.minicat.minicatserver.exception.ConnectionNotFoundException;
+import com.minicat.minicatserver.exception.SqlInjectionException;
+import com.minicat.minicatserver.exception.ValidationException;
 import com.minicat.minicatserver.repository.DatabaseConnectionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -93,6 +97,47 @@ class DatabaseConnectionServiceTest {
         List<DatabaseConnection> all = databaseService.getAllConnections();
         assertFalse(all.isEmpty());
         assertTrue(all.stream().anyMatch(c -> "it-list".equals(c.getName())));
+    }
+
+    @Test
+    void addConnectionValidationUsesSemanticException() {
+        DatabaseConnection invalid = newConnection("it-invalid");
+        invalid.setHost("  ");
+
+        ValidationException ex = assertThrows(ValidationException.class,
+                () -> databaseService.addConnection(invalid));
+        assertTrue(ex.getMessage().contains("主机"));
+    }
+
+    @Test
+    void unknownConnectionOperationsThrowNotFound() {
+        assertThrows(ConnectionNotFoundException.class, () -> databaseService.getDatabases("not-exists"));
+        assertThrows(ConnectionNotFoundException.class,
+                () -> databaseService.executeQuery("not-exists", "demo", "SELECT 1"));
+        assertThrows(ConnectionNotFoundException.class,
+                () -> databaseService.dropTable("not-exists", "demo", "t"));
+        assertThrows(ConnectionNotFoundException.class,
+                () -> databaseService.getColumns("not-exists", "demo", "t"));
+    }
+
+    @Test
+    void blockedSqlThrowsSqlInjectionException() {
+        DatabaseConnection saved = databaseService.addConnection(newConnection("it-blocked-sql"));
+
+        assertThrows(SqlInjectionException.class,
+                () -> databaseService.executeQuery(saved.getId(), "demo",
+                        "SELECT * FROM a UNION SELECT * FROM b"));
+        assertThrows(SqlInjectionException.class,
+                () -> databaseService.executeUpdate(saved.getId(), "demo", "DELETE FROM a"));
+    }
+
+    @Test
+    void unsupportedUpdateTypeThrowsValidationException() {
+        DatabaseConnection saved = databaseService.addConnection(newConnection("it-unsupported-update"));
+
+        ValidationException ex = assertThrows(ValidationException.class,
+                () -> databaseService.executeUpdate(saved.getId(), "demo", "ALTER TABLE a ADD COLUMN b INT"));
+        assertTrue(ex.getMessage().contains("不支持的SQL操作类型"));
     }
 
     private static DatabaseConnection newConnection(String name) {

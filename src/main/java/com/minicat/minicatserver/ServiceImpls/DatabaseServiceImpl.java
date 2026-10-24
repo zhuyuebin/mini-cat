@@ -12,6 +12,7 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import com.opencsv.CSVReader;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class DatabaseServiceImpl implements DatabaseService {
     
@@ -120,11 +122,12 @@ public class DatabaseServiceImpl implements DatabaseService {
         connection.setId(null);
         connection.setActive(true);
         
-        // 加密密码
-        System.out.println("[DEBUG] Adding connection - Password before encryption: PLAIN TEXT");
+        // 加密密码（只记录长度，不记录任何密码内容）
         String encrypted = passwordEncryptionService.encrypt(connection.getPassword());
         connection.setPassword(encrypted);
-        System.out.println("[DEBUG] Password encrypted successfully, length: " + encrypted.length());
+        log.debug("Connection created: name={}, type={}, host={}:{}, encryptedPasswordLength={}",
+                connection.getName(), connection.getDatabaseType(), connection.getHost(),
+                connection.getPort(), encrypted.length());
         
         DatabaseConnectionEntity entity = convertToEntity(connection);
         DatabaseConnectionEntity savedEntity = connectionRepository.save(entity);
@@ -150,22 +153,21 @@ public class DatabaseServiceImpl implements DatabaseService {
         
         // 如果密码为空或null,保留原有密码
         if (connection.getPassword() == null || connection.getPassword().isEmpty()) {
-            System.out.println("[DEBUG] Updating connection - Password is empty, keeping existing encrypted password");
+            log.debug("Connection update keeps existing password: id={}", id);
             // 不修改密码，保持原有的加密密码
         } else {
             // 如果密码与已加密的不同,说明是新密码,需要加密
             if (!connection.getPassword().equals(existingEntity.getPassword())) {
-                System.out.println("[DEBUG] Updating connection - New password detected");
                 if (!passwordEncryptionService.isEncrypted(connection.getPassword())) {
                     String encrypted = passwordEncryptionService.encrypt(connection.getPassword());
                     existingEntity.setPassword(encrypted);
-                    System.out.println("[DEBUG] New password encrypted successfully, length: " + encrypted.length());
+                    log.debug("Connection password updated: id={}", id);
                 } else {
-                    System.out.println("[DEBUG] New password is already encrypted");
+                    log.debug("Connection update received already-encrypted password: id={}", id);
                     existingEntity.setPassword(connection.getPassword());
                 }
             } else {
-                System.out.println("[DEBUG] Updating connection - Password unchanged");
+                log.debug("Connection password unchanged: id={}", id);
             }
         }
         
@@ -183,8 +185,9 @@ public class DatabaseServiceImpl implements DatabaseService {
             // 关闭对应的连接池
             String poolKey = buildPoolKey(removed, removed.getDatabaseName());
             connectionPoolManager.closePool(poolKey);
-            
+
             connectionRepository.deleteById(id);
+            log.info("Connection deleted: id={}, name={}", id, removed.getName());
             return true;
         }
         return false;
@@ -204,19 +207,21 @@ public class DatabaseServiceImpl implements DatabaseService {
             success = c != null && !c.isClosed();
             if (success) {
                 message = "Connection to " + conn.getHost() + ":" + conn.getPort() + " is valid";
-                System.out.println("[Connection Test] SUCCESS - " + message);
+                log.info("Connection test succeeded: name={}, target={}:{}",
+                        conn.getName(), conn.getHost(), conn.getPort());
             } else {
                 message = "Connection is null or closed";
-                System.out.println("[Connection Test] FAILED - " + message);
+                log.warn("Connection test failed (null/closed connection): name={}, target={}:{}",
+                        conn.getName(), conn.getHost(), conn.getPort());
             }
         } catch (SQLException e) {
             message = "SQL Error: " + e.getMessage();
-            System.err.println("[Connection Test] FAILED - " + message);
-            e.printStackTrace();
+            log.error("Connection test failed (SQL error): name={}, target={}:{}",
+                    conn.getName(), conn.getHost(), conn.getPort(), e);
         } catch (Exception e) {
             message = "Error: " + e.getMessage();
-            System.err.println("[Connection Test] FAILED - " + message);
-            e.printStackTrace();
+            log.error("Connection test failed: name={}, target={}:{}",
+                    conn.getName(), conn.getHost(), conn.getPort(), e);
         }
         
         // 保存测试结果到数据库
@@ -234,11 +239,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 entity.setLastTestTime(LocalDateTime.now());
                 entity.setLastTestMessage(message);
                 connectionRepository.save(entity);
-                System.out.println("[Connection Status] Saved - ID: " + id + ", Status: " + status);
+                log.debug("Connection test result saved: id={}, status={}", id, status);
             }
         } catch (Exception e) {
-            System.err.println("[Connection Status] Failed to save test result: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to save connection test result: id={}", id, e);
         }
     }
 
@@ -296,7 +300,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                     }
                 } catch (SQLException e) {
                     // 如果查询失败，设置行数为0
-                    System.err.println("Failed to get row count for table " + tableName + ": " + e.getMessage());
+                    log.warn("Failed to count rows: connectionId={}, database={}, table={}",
+                            connectionId, databaseName, tableName, e);
                     tableInfo.setRowCount(0);
                 }
                 
@@ -403,6 +408,8 @@ public class DatabaseServiceImpl implements DatabaseService {
         } finally {
             long endTime = System.currentTimeMillis();
             result.setExecutionTime(endTime - startTime);
+            log.debug("Query executed: connectionId={}, database={}, rows={}, cost={}ms",
+                    connectionId, databaseName, result.getTotalRows(), result.getExecutionTime());
         }
 
         return result;
@@ -436,7 +443,10 @@ public class DatabaseServiceImpl implements DatabaseService {
         try (Connection c = createJdbcConnection(conn, databaseName);
              Statement stmt = c.createStatement()) {
 
-            return stmt.executeUpdate(sql);
+            int affectedRows = stmt.executeUpdate(sql);
+            log.info("DML executed: connectionId={}, database={}, affectedRows={}",
+                    connectionId, databaseName, affectedRows);
+            return affectedRows;
 
         } catch (SQLException e) {
             throw new RuntimeException("Update execution failed: " + e.getMessage(), e);
@@ -588,18 +598,19 @@ public class DatabaseServiceImpl implements DatabaseService {
         sql.append(";");
 
         String createSql = sql.toString();
-        System.out.println("[DEBUG] Creating table with SQL: " + createSql);
+        log.debug("Creating table: connectionId={}, database={}, sql={}", connectionId, databaseName, createSql);
 
         try (Connection c = createJdbcConnection(conn, databaseName);
              Statement stmt = c.createStatement()) {
             
             stmt.executeUpdate(createSql);
-            System.out.println("[DEBUG] Table created successfully: " + createTableDTO.getTableName());
+            log.info("Table created: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, createTableDTO.getTableName());
             return true;
 
         } catch (SQLException e) {
-            System.err.println("[ERROR] Failed to create table: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to create table: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, createTableDTO.getTableName(), e);
             throw new RuntimeException("创建表失败: " + e.getMessage(), e);
         }
     }
@@ -689,7 +700,8 @@ public class DatabaseServiceImpl implements DatabaseService {
                             result.setSuccessRows(result.getSuccessRows() + 1);
                         } catch (Exception e) {
                             result.setFailedRows(result.getFailedRows() + 1);
-                            System.err.println("导入第 " + i + " 行失败: " + e.getMessage());
+                            log.warn("Import row prepared failed: connectionId={}, table={}, row={}",
+                                    connectionId, tableName, i, e);
                         }
                     }
                     ps.executeBatch();
@@ -724,18 +736,19 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         // 构建 DROP TABLE SQL
         String dropSql = "DROP TABLE " + tableName;
-        System.out.println("[DEBUG] Dropping table with SQL: " + dropSql);
+        log.debug("Dropping table: connectionId={}, database={}, sql={}", connectionId, databaseName, dropSql);
 
         try (Connection c = createJdbcConnection(conn, databaseName);
              Statement stmt = c.createStatement()) {
             
             stmt.executeUpdate(dropSql);
-            System.out.println("[DEBUG] Table dropped successfully: " + tableName);
+            log.info("Table dropped: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, tableName);
             return true;
 
         } catch (SQLException e) {
-            System.err.println("[ERROR] Failed to drop table: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to drop table: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, tableName, e);
             throw new RuntimeException("删除表失败: " + e.getMessage(), e);
         }
     }
@@ -863,30 +876,24 @@ public class DatabaseServiceImpl implements DatabaseService {
     private Connection createJdbcConnection(DatabaseConnection conn, String databaseName) throws SQLException {
         String jdbcUrl = buildJdbcUrl(conn, databaseName);
         String poolKey = buildPoolKey(conn, databaseName);
-        
-        // 解密密码
+
+        // 解密密码（绝不记录密码内容）
         String decryptedPassword = conn.getPassword();
-        System.out.println("[DEBUG] Original password from connection: " + (decryptedPassword == null ? "NULL" : (decryptedPassword.isEmpty() ? "EMPTY" : "PRESENT (length=" + decryptedPassword.length() + ")")));
-        
         if (decryptedPassword != null && !decryptedPassword.isEmpty()) {
-            System.out.println("[DEBUG] Password is encrypted: " + passwordEncryptionService.isEncrypted(decryptedPassword));
             if (passwordEncryptionService.isEncrypted(decryptedPassword)) {
                 try {
                     decryptedPassword = passwordEncryptionService.decrypt(decryptedPassword);
-                    System.out.println("[DEBUG] Password decrypted successfully");
                 } catch (Exception e) {
-                    System.err.println("[ERROR] Failed to decrypt password: " + e.getMessage());
-                    e.printStackTrace();
+                    log.error("Failed to decrypt password: connectionId={}, name={}",
+                            conn.getId(), conn.getName(), e);
                     throw new SQLException("Failed to decrypt password: " + e.getMessage(), e);
                 }
-            } else {
-                System.out.println("[DEBUG] Password is not encrypted, using as-is");
             }
         } else {
-            System.err.println("[ERROR] Password is null or empty for connection: " + conn.getName() + " (" + conn.getHost() + ":" + conn.getPort() + ")");
+            log.error("Connection password is empty: connectionId={}, name={}, target={}:{}",
+                    conn.getId(), conn.getName(), conn.getHost(), conn.getPort());
         }
-        
-        System.out.println("[DEBUG] Final password to use: " + (decryptedPassword == null ? "NULL" : (decryptedPassword.isEmpty() ? "EMPTY" : "PRESENT")));
+
         return connectionPoolManager.getConnection(poolKey, jdbcUrl, conn.getUsername(), decryptedPassword);
     }
 

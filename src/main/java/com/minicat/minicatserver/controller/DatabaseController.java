@@ -8,6 +8,7 @@ import com.minicat.minicatserver.dto.ColumnInfoDTO;
 import com.minicat.minicatserver.dto.CreateTableDTO;
 import com.minicat.minicatserver.dto.ImportResult;
 import com.minicat.minicatserver.entity.DatabaseConnection;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -15,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/database")
 public class DatabaseController {
@@ -116,7 +118,7 @@ public class DatabaseController {
     public ApiResponseDTO<QueryResultDTO> executeQuery(@PathVariable String id,
                                                        @RequestParam String database,
                                                        @RequestBody String sql) {
-        System.out.println("[DEBUG] Received SQL query: " + sql);
+        log.debug("Received SQL query request: connectionId={}, database={}", id, database);
         return ApiResponseDTO.success(databaseService.executeQuery(id, database, sql));
     }
 
@@ -124,7 +126,7 @@ public class DatabaseController {
     public ApiResponseDTO<Integer> executeUpdate(@PathVariable String id,
                                                  @RequestParam String database,
                                                  @RequestBody String sql) {
-        System.out.println("[DEBUG] Received SQL update: " + sql);
+        log.debug("Received SQL update request: connectionId={}, database={}", id, database);
         int affectedRows = databaseService.executeUpdate(id, database, sql);
         return ApiResponseDTO.success(affectedRows);
     }

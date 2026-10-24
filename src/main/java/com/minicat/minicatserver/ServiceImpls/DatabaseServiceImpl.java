@@ -146,6 +146,33 @@ public class DatabaseServiceImpl implements DatabaseService {
             return false;
         }
         
+        // 判断连接参数是否变化；变化后需要回收旧连接池，避免继续使用旧凭据
+        boolean connectionSettingsChanged =
+                !Objects.equals(existingEntity.getHost(), connection.getHost())
+                || !Objects.equals(existingEntity.getPort(), connection.getPort())
+                || !Objects.equals(existingEntity.getUsername(), connection.getUsername())
+                || !Objects.equals(existingEntity.getDatabaseType(), connection.getDatabaseType())
+                || !Objects.equals(existingEntity.getDatabaseName(), connection.getDatabaseName())
+                || !Objects.equals(existingEntity.getCharset(), connection.getCharset());
+
+        boolean passwordChanged = false;
+        if (connection.getPassword() != null && !connection.getPassword().isEmpty()
+                && !connection.getPassword().equals(existingEntity.getPassword())) {
+            passwordChanged = true;
+            if (!passwordEncryptionService.isEncrypted(connection.getPassword())) {
+                existingEntity.setPassword(passwordEncryptionService.encrypt(connection.getPassword()));
+                log.debug("Connection password updated: id={}", id);
+            } else {
+                existingEntity.setPassword(connection.getPassword());
+                log.debug("Connection update received already-encrypted password: id={}", id);
+            }
+        }
+
+        // 先关旧池，再写库：让后续请求不会取到旧凭据的连接
+        if (connectionSettingsChanged || passwordChanged) {
+            connectionPoolManager.closePoolsForConnection(id);
+        }
+
         // 更新现有实体的字段，而不是创建新实体
         existingEntity.setName(connection.getName());
         existingEntity.setHost(connection.getHost());
@@ -155,28 +182,15 @@ public class DatabaseServiceImpl implements DatabaseService {
         existingEntity.setDatabaseName(connection.getDatabaseName());
         existingEntity.setCharset(connection.getCharset());
         existingEntity.setActive(connection.getActive());
-        
-        // 如果密码为空或null,保留原有密码
-        if (connection.getPassword() == null || connection.getPassword().isEmpty()) {
-            log.debug("Connection update keeps existing password: id={}", id);
-            // 不修改密码，保持原有的加密密码
-        } else {
-            // 如果密码与已加密的不同,说明是新密码,需要加密
-            if (!connection.getPassword().equals(existingEntity.getPassword())) {
-                if (!passwordEncryptionService.isEncrypted(connection.getPassword())) {
-                    String encrypted = passwordEncryptionService.encrypt(connection.getPassword());
-                    existingEntity.setPassword(encrypted);
-                    log.debug("Connection password updated: id={}", id);
-                } else {
-                    log.debug("Connection update received already-encrypted password: id={}", id);
-                    existingEntity.setPassword(connection.getPassword());
-                }
-            } else {
-                log.debug("Connection password unchanged: id={}", id);
-            }
-        }
-        
+
         connectionRepository.save(existingEntity);
+
+        if (connectionSettingsChanged || passwordChanged) {
+            // 保存后再关一次：覆盖"并发请求读取旧实体并重建旧池"的窗口
+            connectionPoolManager.closePoolsForConnection(id);
+            log.info("Connection pools recycled after update: id={}, settingsChanged={}, passwordChanged={}",
+                    id, connectionSettingsChanged, passwordChanged);
+        }
         return true;
     }
 
@@ -187,9 +201,8 @@ public class DatabaseServiceImpl implements DatabaseService {
             DatabaseConnectionEntity entity = optionalEntity.get();
             DatabaseConnection removed = convertToDTO(entity);
             
-            // 关闭对应的连接池
-            String poolKey = buildPoolKey(removed, removed.getDatabaseName());
-            connectionPoolManager.closePool(poolKey);
+            // 关闭该连接配置下的所有连接池（可能浏览过多个数据库）
+            connectionPoolManager.closePoolsForConnection(id);
 
             connectionRepository.deleteById(id);
             log.info("Connection deleted: id={}, name={}", id, removed.getName());
@@ -490,7 +503,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             throw new ConnectionNotFoundException(connectionId);
         }
 
-        String poolKey = buildPoolKey(conn, databaseName);
+        ConnectionPoolManager.PoolKey poolKey = new ConnectionPoolManager.PoolKey(connectionId, databaseName);
         Map<String, Object> status = connectionPoolManager.getPoolStatus(poolKey);
         
         if (status == null) {
@@ -893,7 +906,7 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     private Connection createJdbcConnection(DatabaseConnection conn, String databaseName) throws SQLException {
         String jdbcUrl = buildJdbcUrl(conn, databaseName);
-        String poolKey = buildPoolKey(conn, databaseName);
+        ConnectionPoolManager.PoolKey poolKey = new ConnectionPoolManager.PoolKey(conn.getId(), databaseName);
 
         // 解密密码（绝不记录密码内容）
         String decryptedPassword = conn.getPassword();
@@ -913,14 +926,6 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
 
         return connectionPoolManager.getConnection(poolKey, jdbcUrl, conn.getUsername(), decryptedPassword);
-    }
-
-    private String buildPoolKey(DatabaseConnection conn, String databaseName) {
-        return String.format("%s_%s_%d_%s", 
-            conn.getDatabaseType().toLowerCase(),
-            conn.getHost(), 
-            conn.getPort(), 
-            databaseName != null ? databaseName : "");
     }
 
     private String buildJdbcUrl(DatabaseConnection conn, String databaseName) {

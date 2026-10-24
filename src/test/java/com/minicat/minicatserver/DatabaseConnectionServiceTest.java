@@ -1,6 +1,7 @@
 package com.minicat.minicatserver;
 
 import com.minicat.minicatserver.Services.DatabaseService;
+import com.minicat.minicatserver.Utils.ConnectionPoolManager;
 import com.minicat.minicatserver.Utils.PasswordEncryptionService;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.entity.DatabaseConnectionEntity;
@@ -8,18 +9,22 @@ import com.minicat.minicatserver.exception.ConnectionNotFoundException;
 import com.minicat.minicatserver.exception.SqlInjectionException;
 import com.minicat.minicatserver.exception.ValidationException;
 import com.minicat.minicatserver.repository.DatabaseConnectionRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.Connection;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +47,14 @@ class DatabaseConnectionServiceTest {
 
     @Autowired
     private PasswordEncryptionService passwordEncryptionService;
+
+    @Autowired
+    private ConnectionPoolManager connectionPoolManager;
+
+    @AfterEach
+    void tearDown() {
+        connectionPoolManager.closeAllPools();
+    }
 
     @Test
     void addConnectionEncryptsPasswordBeforePersisting() {
@@ -138,6 +151,31 @@ class DatabaseConnectionServiceTest {
         ValidationException ex = assertThrows(ValidationException.class,
                 () -> databaseService.executeUpdate(saved.getId(), "demo", "ALTER TABLE a ADD COLUMN b INT"));
         assertTrue(ex.getMessage().contains("不支持的SQL操作类型"));
+    }
+
+    @Test
+    void updateAndDeleteRecycleConnectionPools() throws Exception {
+        DatabaseConnection saved = databaseService.addConnection(newConnection("it-pool-lifecycle"));
+        ConnectionPoolManager.PoolKey poolKey =
+                new ConnectionPoolManager.PoolKey(saved.getId(), "demo");
+        String jdbcUrl = "jdbc:h2:mem:pool_lifecycle_" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+
+        try (Connection connection = connectionPoolManager.getConnection(poolKey, jdbcUrl, "sa", "")) {
+            assertNotNull(connection);
+        }
+        assertNotNull(connectionPoolManager.getPoolStatus(poolKey), "获取连接后应创建连接池");
+
+        // 修改密码后，旧池必须被关闭（下次访问会用新密码重建）
+        DatabaseConnection update = newConnection("it-pool-lifecycle");
+        update.setPassword("new-secret-456");
+        assertTrue(databaseService.updateConnection(saved.getId(), update));
+        assertNull(connectionPoolManager.getPoolStatus(poolKey), "修改连接配置后旧连接池必须被关闭");
+
+        // 重建池后删除连接，池同样要被关闭
+        connectionPoolManager.getConnection(poolKey, jdbcUrl, "sa", "").close();
+        assertNotNull(connectionPoolManager.getPoolStatus(poolKey));
+        assertTrue(databaseService.deleteConnection(saved.getId()));
+        assertNull(connectionPoolManager.getPoolStatus(poolKey), "删除连接后连接池必须被关闭");
     }
 
     private static DatabaseConnection newConnection(String name) {

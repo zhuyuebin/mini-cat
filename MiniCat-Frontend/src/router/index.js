@@ -1,42 +1,32 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import Layout from '@/layout/index.vue'
+import { createRouter, createWebHashHistory } from 'vue-router'
+import AppShell from '@/layout/AppShell.vue'
 
+/**
+ * P0 采用 Hash 路由：
+ * 后端静态资源没有 SPA fallback，history 模式下刷新 /tables 会 404；
+ * Hash 路由（/#/workspace）无需改后端即可支持刷新与深链。
+ */
 const routes = [
   {
     path: '/',
-    name: 'Home',
-    component: () => import('@/views/Home.vue'),
-    meta: { title: '首页' }
-  },
-  {
-    path: '/app',
-    component: Layout,
-    redirect: '/connections',
+    component: AppShell,
     children: [
-      {
-        path: '/connections',
-        name: 'Connections',
-        component: () => import('@/views/Connections.vue'),
-        meta: { title: '连接管理', icon: 'Connection' }
-      },
-      {
-        path: '/query',
-        name: 'Query',
-        component: () => import('@/views/Query.vue'),
-        meta: { title: 'SQL工作台', icon: 'Document' }
-      },
-      {
-        path: '/tables',
-        name: 'Tables',
-        component: () => import('@/views/Tables.vue'),
-        meta: { title: '数据表管理', icon: 'Grid' }
-      }
+      { path: '', redirect: '/workspace' },
+      { path: 'workspace', name: 'Workspace', component: () => import('@/views/WorkspaceView.vue') },
+      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue') },
+      { path: 'welcome', name: 'Welcome', component: () => import('@/views/WelcomeView.vue') }
     ]
-  }
+  },
+  // 兼容旧链接
+  { path: '/app', redirect: '/workspace' },
+  { path: '/connections', redirect: '/settings' },
+  { path: '/query', redirect: '/workspace' },
+  { path: '/tables', redirect: '/workspace' },
+  { path: '/:pathMatch(.*)*', redirect: '/workspace' }
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes
 })
 

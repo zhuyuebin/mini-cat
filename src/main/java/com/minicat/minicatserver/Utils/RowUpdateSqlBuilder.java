@@ -3,6 +3,7 @@ package com.minicat.minicatserver.Utils;
 import com.minicat.minicatserver.exception.ValidationException;
 
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -36,6 +37,18 @@ public final class RowUpdateSqlBuilder {
                                      List<String> changeColumns,
                                      List<String> identityColumns,
                                      List<String> expectedColumns) {
+        return buildUpdate(table, changeColumns, identityColumns, expectedColumns, Set.of());
+    }
+
+    /**
+     * 同 {@link #buildUpdate(String, List, List, List)}，但旧值为 NULL 的 CAS 列使用 {@code IS NULL}
+     * （SQL 中 {@code col = NULL} 永远不成立，必须单独处理）。
+     */
+    public static String buildUpdate(String table,
+                                     List<String> changeColumns,
+                                     List<String> identityColumns,
+                                     List<String> expectedColumns,
+                                     Set<String> expectedNullColumns) {
         if (changeColumns == null || changeColumns.isEmpty()) {
             throw new ValidationException("没有需要修改的列");
         }
@@ -63,7 +76,11 @@ public final class RowUpdateSqlBuilder {
 
         if (expectedColumns != null) {
             for (String expectedColumn : expectedColumns) {
-                sql.append(" AND ").append(quoteIdentifier(expectedColumn)).append(" = ?");
+                if (expectedNullColumns != null && expectedNullColumns.contains(expectedColumn)) {
+                    sql.append(" AND ").append(quoteIdentifier(expectedColumn)).append(" IS NULL");
+                } else {
+                    sql.append(" AND ").append(quoteIdentifier(expectedColumn)).append(" = ?");
+                }
             }
         }
         return sql.toString();

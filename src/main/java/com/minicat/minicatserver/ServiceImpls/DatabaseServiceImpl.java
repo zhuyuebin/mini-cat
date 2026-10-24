@@ -612,13 +612,18 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         Map<String, Object> expected = request.getExpected() == null ? Map.of() : request.getExpected();
         List<String> expectedColumns = new ArrayList<>(expected.keySet());
+        Set<String> expectedNullColumns = new LinkedHashSet<>();
         for (String expectedColumn : expectedColumns) {
             if (!request.getChanges().containsKey(expectedColumn)) {
                 throw new ValidationException("expected 只能是本次修改的列: " + expectedColumn);
             }
+            if (expected.get(expectedColumn) == null) {
+                expectedNullColumns.add(expectedColumn);
+            }
         }
 
-        String sql = RowUpdateSqlBuilder.buildUpdate(request.getTable(), changeColumns, identityColumns, expectedColumns);
+        String sql = RowUpdateSqlBuilder.buildUpdate(
+                request.getTable(), changeColumns, identityColumns, expectedColumns, expectedNullColumns);
 
         try (Connection c = createJdbcConnection(conn, databaseName)) {
             int affectedRows;
@@ -631,6 +636,9 @@ public class DatabaseServiceImpl implements DatabaseService {
                     index = bindValue(ps, index, columnMap.get(identityColumn), request.getKeys().get(identityColumn));
                 }
                 for (String expectedColumn : expectedColumns) {
+                    if (expectedNullColumns.contains(expectedColumn)) {
+                        continue; // IS NULL 不占位
+                    }
                     index = bindValue(ps, index, columnMap.get(expectedColumn), expected.get(expectedColumn));
                 }
                 affectedRows = ps.executeUpdate();

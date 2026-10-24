@@ -46,6 +46,17 @@ class RowUpdateSqlBuilderTest {
     }
 
     @Test
+    void buildsCasWithNullOldValueAsIsNull() {
+        String sql = RowUpdateSqlBuilder.buildUpdate(
+                "user",
+                List.of("beizhu"),
+                List.of("id"),
+                List.of("beizhu"),
+                java.util.Set.of("beizhu"));
+        assertEquals("UPDATE `user` SET `beizhu` = ? WHERE `id` = ? AND `beizhu` IS NULL", sql);
+    }
+
+    @Test
     void supportsCompositeIdentityColumns() {
         String sql = RowUpdateSqlBuilder.buildUpdate(
                 "order_item",

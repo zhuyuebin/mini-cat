@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.minicat</groupId>
     <artifactId>minicat-server</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.2.0</version>
     <name>MiniCat</name>
     <description>MiniCat</description>
     <url/>

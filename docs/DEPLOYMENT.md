@@ -27,25 +27,25 @@ cd mini-cat
 ./mvnw clean package -DskipTests        # Windows: mvnw.cmd clean package -DskipTests
 ```
 
-产物：`target/minicat-server-0.0.1-SNAPSHOT.jar`（约 80MB，已内置前端）。
+产物：`target/minicat-server-1.2.0.jar`（约 80MB，已内置前端）。
 
 ### 2.2 运行
 
 ```bash
 # 前台运行（推荐本机使用）
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+java -jar target/minicat-server-1.2.0.jar
 
 # 生产 profile（Gzip、文件日志、关闭 DevTools/H2 控制台）
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+java -jar target/minicat-server-1.2.0.jar --spring.profiles.active=prod
 
 # 后台运行
-nohup java -jar target/minicat-server-0.0.1-SNAPSHOT.jar > minicat.log 2>&1 &
+nohup java -jar target/minicat-server-1.2.0.jar > minicat.log 2>&1 &
 ```
 
 JVM 参数建议：
 
 ```bash
-java -Xms512m -Xmx1024m -XX:+UseG1GC -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+java -Xms512m -Xmx1024m -XX:+UseG1GC -jar target/minicat-server-1.2.0.jar
 ```
 
 > 运行目录决定 `data/` 位置：请在项目根目录（或你希望保存 `data/` 的目录）启动。

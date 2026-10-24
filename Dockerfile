@@ -43,7 +43,7 @@ WORKDIR /app
 # 添加元数据标签
 LABEL maintainer="MiniCat Team"
 LABEL description="A lightweight web-based database management tool"
-LABEL version="1.0.0"
+LABEL version="1.2.0"
 
 # 创建非root用户
 RUN addgroup -S minicat && adduser -S minicat -G minicat

@@ -137,7 +137,7 @@ start_win.bat
 git clone https://github.com/zhuyuebin/mini-cat.git
 cd mini-cat
 ./mvnw clean package -DskipTests
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+java -jar target/minicat-server-1.2.0.jar
 ```
 
 **启动成功标志**：控制台出现 `Tomcat started on port 8888` 与 `Started MiniCatApplication`。

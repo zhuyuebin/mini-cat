@@ -8,7 +8,7 @@
 
 ---
 
-## [Unreleased] — 目标 v1.2.0
+## [1.2.0] - 2026-10-24
 
 ### 新增
 
@@ -116,5 +116,6 @@
 - 分类：`新增` / `修复` / `变更` / `废弃` / `移除` / `安全`；
 - 发布流程（版本号、Tag、GitHub/Gitee 双远程同步）见 [docs/RELEASING.md](docs/RELEASING.md)。
 
-[Unreleased]: https://github.com/zhuyuebin/mini-cat/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/zhuyuebin/mini-cat/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/zhuyuebin/mini-cat/releases/tag/v1.2.0
 [1.0.0]: https://github.com/zhuyuebin/mini-cat/releases/tag/v1.0.0

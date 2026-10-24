@@ -52,7 +52,7 @@ test(api): 覆盖 CAS 冲突分支
 ./mvnw spring-boot:run
 # 或构建后运行
 ./mvnw clean package -DskipTests -Dskip.installnodenpm -Dskip.npm
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+java -jar target/minicat-server-1.2.0.jar
 ```
 
 ### 3.2 前端
@@ -148,7 +148,8 @@ cd MiniCat-Frontend && npm run build
 | `frontend-build` | Node 20 → `npm ci` → `npm run build` + 上传 dist |
 | `package` | 下载 frontend dist → `mvn package -DskipTests` + 上传 JAR |
 
-`.gitee/workflows/build.yml` 为 Gitee Go 参考配置（未持续验证）。
+`.gitee/workflows/build.yml` 已移除：Gitee 仅作代码镜像，**不配置 CI/CD**；所有 CI 由 GitHub Actions 的
+公开仓库免费额度承担。
 
 ---
 

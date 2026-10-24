@@ -64,7 +64,7 @@ chmod +x start.sh
 ./mvnw clean package -DskipTests      # Windows: mvnw.cmd clean package -DskipTests
 
 # 运行
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+java -jar target/minicat-server-1.2.0.jar
 ```
 
 > Windows 上注意：不要写成 `mvnw.cmd mvn ...`，正确是 `mvnw.cmd clean package -DskipTests`。

@@ -84,8 +84,8 @@ mini-cat/
 │   │   └── components/                      # 连接/建表/导入/自定义 SQL 对话框
 │   ├── index.html、vite.config.js、package.json
 ├── docs/                                    # 本文档集
-├── .github/workflows/build.yml               # GitHub Actions
-├── .gitee/workflows/build.yml                # Gitee Go 参考
+├── .github/workflows/build.yml               # GitHub Actions（唯一 CI）
+├── .gitee/                                   # Gitee Issue/PR 模板（代码镜像，不跑 CI）
 ├── Dockerfile、docker-compose.yml            # 容器化部署
 ├── pom.xml、mvnw、mvnw.cmd                   # 构建
 ├── start.sh、start_win.bat、restart.sh       # 启动/重启脚本

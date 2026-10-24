@@ -9,8 +9,8 @@
 ## 1. 版本约定
 
 - 遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`；
-- 当前开发版：`pom.xml` 中为 `0.0.1-SNAPSHOT`（未发布开发版），文档版本目标为 **v1.2.0**；
-- **正式发布时**：
+- 当前版本：**v1.2.0**（2026-10-24 发布，Tag 已推送 GitHub/Gitee）；
+- 后续版本发布时，按以下步骤先改版本号，再走第 2、3 节流程：
 
 ```bash
 # 1) 更新 pom.xml 版本（示例：1.2.0）
@@ -127,7 +127,8 @@ git push origin main --tags   # GitHub 主
 git push gitee  main --tags   # Gitee 备份
 ```
 
-> Gitee 仅作镜像，**Issue/PR 以 GitHub 为主**；Gitee 上的 Issue 也欢迎，但合入仍走 GitHub。
+> Gitee 仅作代码镜像，**不配置 CI/CD**（用户无 Gitee Go 流水线额度；CI 全部由 GitHub Actions
+> 的公开仓库免费额度承担，长期只用 GitHub Actions）。因此仓库中只保留 `.github/workflows/`。
 
 ---
 

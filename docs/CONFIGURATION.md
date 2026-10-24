@@ -63,7 +63,7 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 启动方式：
 
 ```bash
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+java -jar target/minicat-server-1.2.0.jar --spring.profiles.active=prod
 ```
 
 ---
@@ -140,15 +140,15 @@ services:
 
 ```bash
 # 本机默认启动（数据目录 = 当前目录/data）
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+java -jar target/minicat-server-1.2.0.jar
 
 # 指定端口 + 关闭内联编辑
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar \
+java -jar target/minicat-server-1.2.0.jar \
   --server.port=9000 --minicat.ui.inline-edit-enabled=false
 
 # 生产 profile + 环境变量密钥
 MINICAT_SECRET_KEY='<32+ 位随机串>' \
-  java -jar target/minicat-server-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+  java -jar target/minicat-server-1.2.0.jar --spring.profiles.active=prod
 
 # 前端开发模式
 cd MiniCat-Frontend && npm install && npm run dev

@@ -120,6 +120,15 @@ export function getConnectionPoolStatus(id, database) {
   })
 }
 
+// 获取表数据（服务端分页，返回当前页数据 + 总行数）
+export function getTableData(id, database, table, page = 1, size = 50) {
+  return request({
+    url: `/database/connections/${id}/table-data`,
+    method: 'get',
+    params: { database, table, page, size }
+  })
+}
+
 // 创建表
 export function createTable(id, database, data) {
   return request({

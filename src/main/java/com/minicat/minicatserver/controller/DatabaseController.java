@@ -3,6 +3,7 @@ package com.minicat.minicatserver.controller;
 import com.minicat.minicatserver.Services.DatabaseService;
 import com.minicat.minicatserver.dto.ApiResponseDTO;
 import com.minicat.minicatserver.dto.QueryResultDTO;
+import com.minicat.minicatserver.dto.TableDataPageDTO;
 import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
 import com.minicat.minicatserver.dto.CreateTableDTO;
@@ -137,6 +138,15 @@ public class DatabaseController {
     public ApiResponseDTO<Map<String, Object>> getConnectionPoolStatus(@PathVariable String id,
                                                                        @RequestParam String database) {
         return ApiResponseDTO.success(databaseService.getConnectionPoolStatus(id, database));
+    }
+
+    @GetMapping("/connections/{id}/table-data")
+    public ApiResponseDTO<TableDataPageDTO> getTableDataPage(@PathVariable String id,
+                                                             @RequestParam String database,
+                                                             @RequestParam String table,
+                                                             @RequestParam(defaultValue = "1") int page,
+                                                             @RequestParam(defaultValue = "50") int size) {
+        return ApiResponseDTO.success(databaseService.getTableDataPage(id, database, table, page, size));
     }
 
     @PostMapping("/connections/{id}/create-table")

@@ -515,7 +515,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Files, Download, Grid, Document, Coin, List, Key, Lock, Collection, DataLine, InfoFilled, Plus, Edit, Upload, UploadFilled, Delete } from '@element-plus/icons-vue'
-import { getAllConnections, getDatabases, getTables, getColumns, executeQuery, executeUpdate, createTable, importData, dropTable } from '@/api/database'
+import { getAllConnections, getDatabases, getTables, getColumns, getTableData, executeQuery, executeUpdate, createTable, importData, dropTable } from '@/api/database'
 
 const connections = ref([])
 const databases = ref([])
@@ -647,21 +647,18 @@ const loadTableData = async () => {
   activeTab.value = 'data'
   
   try {
-    const offset = (currentPage.value - 1) * pageSize.value
-    const tableName = selectedTable.value.tableName
-    // /query 接口返回的 totalRows 只是"本次返回的行数"，不能当作分页总数；
-    // 这里额外查一次 COUNT(*) 才能让分页器拿到真实总行数。
-    const [countRes, pageRes] = await Promise.all([
-      executeQuery(selectedConnectionId.value, selectedDatabase.value, `SELECT COUNT(*) AS total FROM ${tableName}`),
-      executeQuery(selectedConnectionId.value, selectedDatabase.value, `SELECT * FROM ${tableName} LIMIT ${pageSize.value} OFFSET ${offset}`)
-    ])
-
-    const total = Number(countRes.data?.rows?.[0]?.total ?? 0)
-    totalRows.value = Number.isFinite(total) ? total : 0
-    if (pageRes.data && pageRes.data.rows) {
-      tableData.value = pageRes.data.rows
-      dataColumns.value = pageRes.data.columns || []
-    }
+    // 服务端分页接口一次返回当前页数据与总行数，不再需要前端自己 COUNT(*)
+    const res = await getTableData(
+      selectedConnectionId.value,
+      selectedDatabase.value,
+      selectedTable.value.tableName,
+      currentPage.value,
+      pageSize.value
+    )
+    const pageData = res.data || {}
+    tableData.value = pageData.rows || []
+    dataColumns.value = pageData.columns || []
+    totalRows.value = Number(pageData.total) || 0
   } catch (error) {
     // 错误提示由 axios 响应拦截器统一弹出，这里只记录日志，避免重复弹窗
     console.error('Load table data error:', error)

@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -44,6 +45,12 @@ public class DatabaseServiceImpl implements DatabaseService {
     
     @Autowired
     private SqlInjectionValidator sqlInjectionValidator;
+
+    private static final int TABLE_DATA_DEFAULT_SIZE = 50;
+    private static final int TABLE_DATA_MIN_SIZE = 10;
+    private static final int TABLE_DATA_MAX_SIZE = 200;
+    /** 表名只允许常规标识符字符，防止分页 SQL 注入 */
+    private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_$]+$");
 
     // Entity to DTO conversion
     private DatabaseConnection convertToDTO(DatabaseConnectionEntity entity) {
@@ -513,6 +520,76 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
         
         return status;
+    }
+
+    @Override
+    public TableDataPageDTO getTableDataPage(String connectionId, String databaseName,
+                                             String tableName, int page, int size) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new ConnectionNotFoundException(connectionId);
+        }
+        if (tableName == null || tableName.isBlank() || !TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+            throw new ValidationException("表名不合法: " + tableName);
+        }
+
+        int safePage = clampPage(page);
+        int safeSize = clampSize(size);
+        int offset = (safePage - 1) * safeSize;
+        String quotedTable = "`" + tableName + "`";
+
+        TableDataPageDTO result = new TableDataPageDTO();
+        result.setPage(safePage);
+        result.setSize(safeSize);
+
+        try (Connection c = createJdbcConnection(conn, databaseName)) {
+            // 总行数（供前端分页器使用；大表 COUNT(*) 会较慢，M2 可做缓存/估算）
+            try (Statement stmt = c.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + quotedTable)) {
+                if (rs.next()) {
+                    result.setTotal(rs.getLong(1));
+                }
+            }
+
+            List<String> columns = new ArrayList<>();
+            List<Map<String, Object>> rows = new ArrayList<>();
+            String pageSql = "SELECT * FROM " + quotedTable + " LIMIT " + safeSize + " OFFSET " + offset;
+            try (Statement stmt = c.createStatement();
+                 ResultSet rs = stmt.executeQuery(pageSql)) {
+                ResultSetMetaData metaData = rs.getMetaData();
+                int columnCount = metaData.getColumnCount();
+                for (int i = 1; i <= columnCount; i++) {
+                    columns.add(metaData.getColumnLabel(i));
+                }
+                while (rs.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (String column : columns) {
+                        row.put(column, rs.getObject(column));
+                    }
+                    rows.add(row);
+                }
+            }
+
+            result.setColumns(columns);
+            result.setRows(rows);
+            log.debug("Table data page loaded: connectionId={}, database={}, table={}, page={}, size={}, total={}",
+                    connectionId, databaseName, tableName, safePage, safeSize, result.getTotal());
+        } catch (SQLException e) {
+            throw new QueryExecutionException("加载表数据失败: " + e.getMessage(), e);
+        }
+
+        return result;
+    }
+
+    static int clampPage(int page) {
+        return Math.max(page, 1);
+    }
+
+    static int clampSize(int size) {
+        if (size <= 0) {
+            return TABLE_DATA_DEFAULT_SIZE;
+        }
+        return Math.min(Math.max(size, TABLE_DATA_MIN_SIZE), TABLE_DATA_MAX_SIZE);
     }
 
     @Override

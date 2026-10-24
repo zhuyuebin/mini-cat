@@ -1,6 +1,7 @@
 package com.minicat.minicatserver.Services;
 
 import com.minicat.minicatserver.dto.QueryResultDTO;
+import com.minicat.minicatserver.dto.TableDataPageDTO;
 import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
 import com.minicat.minicatserver.dto.CreateTableDTO;
@@ -29,6 +30,11 @@ public interface DatabaseService {
     List<TableInfoDTO> getTables(String connectionId, String databaseName);
 
     List<ColumnInfoDTO> getColumns(String connectionId, String databaseName, String tableName);
+
+    /**
+     * 表数据分页读取。
+     */
+    TableDataPageDTO getTableDataPage(String connectionId, String databaseName, String tableName, int page, int size);
 
     QueryResultDTO executeQuery(String connectionId, String databaseName, String sql);
 

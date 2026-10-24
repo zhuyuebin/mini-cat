@@ -143,6 +143,22 @@ class DatabaseControllerTest {
                 .andExpect(jsonPath("$.code").value(40001));
     }
 
+    @Test
+    void tableDataPageValidatesConnectionAndTableName() throws Exception {
+        mockMvc.perform(get("/api/database/connections/not-exists/table-data")
+                        .param("database", "demo")
+                        .param("table", "users"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40401));
+
+        String id = createConnection("it-table-data");
+        mockMvc.perform(get("/api/database/connections/{id}/table-data", id)
+                        .param("database", "demo")
+                        .param("table", "users; DROP TABLE x"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001));
+    }
+
     private String createConnection(String name) throws Exception {
         MvcResult created = mockMvc.perform(post("/api/database/connections")
                         .contentType(MediaType.APPLICATION_JSON)

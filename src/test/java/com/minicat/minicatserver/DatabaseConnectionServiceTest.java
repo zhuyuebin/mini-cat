@@ -154,6 +154,18 @@ class DatabaseConnectionServiceTest {
     }
 
     @Test
+    void tableDataPageRejectsUnknownConnectionAndInvalidTableName() {
+        assertThrows(ConnectionNotFoundException.class,
+                () -> databaseService.getTableDataPage("not-exists", "demo", "users", 1, 50));
+
+        DatabaseConnection saved = databaseService.addConnection(newConnection("it-table-data"));
+        assertThrows(ValidationException.class,
+                () -> databaseService.getTableDataPage(saved.getId(), "demo", "users; DROP TABLE x", 1, 50));
+        assertThrows(ValidationException.class,
+                () -> databaseService.getTableDataPage(saved.getId(), "demo", "", 1, 50));
+    }
+
+    @Test
     void updateAndDeleteRecycleConnectionPools() throws Exception {
         DatabaseConnection saved = databaseService.addConnection(newConnection("it-pool-lifecycle"));
         ConnectionPoolManager.PoolKey poolKey =

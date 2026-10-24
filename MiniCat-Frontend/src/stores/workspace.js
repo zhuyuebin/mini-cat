@@ -192,7 +192,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return first ? { connectionId: first.id, database: null } : null
   }
 
-  function openTableTab({ connectionId, database, table, subTab = 'data' }) {
+  function openTableTab({ connectionId, database, table, subTab = null }) {
     const id = tableTabId(connectionId, database, table)
     const existing = tabs.value.find(tab => tab.id === id)
     if (existing) {

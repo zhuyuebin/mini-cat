@@ -153,7 +153,17 @@ npm run dev
 
 ### 访问应用
 
-浏览器打开：**[http://localhost:8888](http://localhost:8888)**
+浏览器打开：**[http://localhost:8888/#/workspace](http://localhost:8888/#/workspace)**
+
+> P0 前端重构后使用 Hash 路由（后端静态资源没有 SPA fallback，Hash 可避免刷新 404）：`/#/workspace` 工作区、`/#/settings` 设置、`/#/welcome` 帮助。
+
+**界面导航（P0 重构后）**
+
+- **左侧资源树**：连接 → 数据库 → 数据表；单击表打开工作区、双击直接进入「数据」；
+- **多 Tab 工作区**：可同时打开多张表 / 多个 SQL 查询，切换 Tab 不丢上下文与页码；
+- **设置**（右上角）：连接管理从一级导航迁入，支持新增/编辑/测试/删除连接；
+- **快捷键**：`Alt+T` 新建查询、`Alt+W` 关闭当前 Tab、`Ctrl+Enter` 执行 SQL；
+- 自动记住上次打开的 Tab、连接/库/表、展开节点与每页条数（SQL 草稿也会保留）。
 
 ---
 
@@ -198,16 +208,33 @@ mini-cat/
 ├── MiniCat-Frontend/
 │   ├── src/
 │   │   ├── api/database.js                  # Axios API 客户端
-│   │   ├── layout/index.vue                 # 应用外壳（侧边栏 + 头部 + 内容区）
-│   │   ├── router/index.js                  # 路由：首页、连接管理、SQL工作台、数据表管理
-│   │   ├── stores/connection.js             # Pinia 状态管理（当前连接）
-│   │   └── views/
-│   │       ├── Home.vue                     # 欢迎首页
-│   │       ├── Connections.vue              # 连接增删改查 + 测试
-│   │       ├── Query.vue                    # SQL 编辑器 + 结果展示 + 表树导航
-│   │       └── Tables.vue                   # 数据表浏览与管理
+│   │   ├── layout/
+│   │   │   ├── AppShell.vue                 # 应用外壳（顶栏 + 资源树 + Tab 工作区 + 状态栏）
+│   │   │   ├── TopBar.vue                   # 顶栏（设置 / 帮助）
+│   │   │   ├── DataExplorer.vue             # 资源树：连接 → 数据库 → 数据表（懒加载）
+│   │   │   └── WorkspaceTabs.vue            # 多 Tab 栏
+│   │   ├── router/index.js                  # Hash 路由：/workspace、/settings、/welcome（旧路由重定向）
+│   │   ├── stores/workspace.js              # Pinia：连接/库/表缓存、多 Tab、工作区状态持久化
+│   │   ├── utils/capabilities.js            # 连接类型能力矩阵（MySQL / PostgreSQL）
+│   │   ├── views/
+│   │   │   ├── WorkspaceView.vue            # Tab 工作区容器
+│   │   │   ├── WelcomeView.vue              # 欢迎 / 帮助 / 无连接引导
+│   │   │   ├── SettingsView.vue             # 设置（连接管理）
+│   │   │   └── workspace/
+│   │   │       ├── TableWorkspace.vue       # 表工作区（上下文栏 + 数据/结构/信息 + 更多 ▾）
+│   │   │       ├── TableDataTab.vue         # 表数据（固定分页、全局行号、增删行）
+│   │   │       ├── TableStructureTab.vue    # 表结构
+│   │   │       ├── TableInfoTab.vue         # 表信息
+│   │   │       ├── QueryWorkspace.vue       # SQL 查询工作区
+│   │   │       └── QueryResultPanel.vue     # 查询结果面板
+│   │   └── components/
+│   │       ├── ConnectionDialog.vue         # 连接新增 / 编辑
+│   │       ├── CreateTableDialog.vue        # 新建表
+│   │       ├── ImportDataDialog.vue         # CSV/Excel 导入
+│   │       └── CustomSqlDialog.vue          # 自定义 SQL
 │   ├── package.json
 │   └── index.html
+├── docs/UI_REFACTOR.md                        # P0 前端信息架构重构契约（线框/状态模型/验收）
 ├── MD-Files/
 │   ├── CHANGELOG.md                          # 更新日志
 │   ├── CONTRIBUTING.md                       # 贡献指南

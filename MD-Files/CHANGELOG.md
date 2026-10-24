@@ -17,6 +17,13 @@
 - 表数据服务端分页接口：`GET /connections/{id}/table-data`（返回 rows + total，page/size 服务端 clamp）
 - M1 测试护栏：H2 内存库完全隔离 + 纯单测 / 集成测试 / MockMvc 契约测试（36 个用例）
 - CI 拆分为 `backend-test`（真跑 `mvn test`）/ `frontend-build` / `package` 三个 job
+- P0 前端信息架构重构（详见 [docs/UI_REFACTOR.md](../docs/UI_REFACTOR.md)）：
+  - 资源树（连接 → 数据库 → 表，懒加载，MySQL 可浏览 / PostgreSQL 能力占位）
+  - 多 Tab 工作区（表 / SQL 查询，去重、上限 12、草稿关闭确认）
+  - 表工作区：固定底部服务端分页、全局行号、导入后自动切数据页并跳末页、增删行刷新
+  - 设置页（连接管理迁入）、欢迎/帮助页与无连接引导
+  - 工作区上下文持久化：Tab / 激活 Tab / 展开节点 / 上次选择 / 每页条数 / SQL 草稿
+- 连接类型能力矩阵 `capabilities.js`：MySQL 完整可用；PostgreSQL 在 P0 仅新增/编辑/测试连接
 
 ### 修复
 - 表结构页"可空 / 默认值"字段名与后端 DTO 不匹配导致显示错误
@@ -32,6 +39,7 @@
   改为按 `connectionId` 统一回收，且对"取连接/建池/关池"加锁避免并发重建旧池
 - 单池连接上限 20 → 5、最小空闲 → 1，避免多连接多库场景目标库连接数爆炸
 - 表数据分页从前端 `COUNT(*)` 补丁改为服务端正式分页接口
+- 分页条被表格撑出卡片可视区、按钮随选中态跳动、表列表行数不刷新等 UI 问题（P0 重构修复）
 
 ### 变更
 - 移除 Controller 上的 `@CrossOrigin(origins = "*")`，改为同源访问
@@ -42,6 +50,10 @@
 - 日志统一到 slf4j（移除 34 处 `System.out/err` 与 6 处 `printStackTrace`，密码/密钥永不记录）
 - Service 层异常语义化：连接不存在 404、参数校验 400、SQL 拦截 403、执行失败 500
 - 前端 Axios 拦截器适配语义化 HTTP 状态码，并保留对旧「HTTP 200 + success=false」的兼容
+- 前端路由改为 Hash 模式（`/#/workspace`），旧路由 `/app`、`/connections`、`/query`、`/tables` 重定向
+- 连接管理入口从一级导航迁入「设置」；默认打开工作区而非营销首页
+- 删除旧 `Home.vue` / `Connections.vue` / `Query.vue` / `Tables.vue` / `layout/index.vue` / `stores/connection.js`
+- 快捷键：`Alt+T` 新建查询、`Alt+W` 关闭 Tab、`Ctrl+Enter` 执行 SQL（浏览器保留的 Ctrl+T/W 不可拦截）
 
 ---
 

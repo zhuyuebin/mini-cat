@@ -87,8 +87,7 @@
                     class="tree-row table-row"
                     :class="{ selected: isTableActive(connection.id, database, table.tableName) }"
                     @click="openTable(connection, database, table.tableName)"
-                    @dblclick="openTable(connection, database, table.tableName, 'data')"
-                  >
+                    @dblclick="openTable(connection, database, table.tableName, 'data')"                  >
                     <el-icon class="node-icon"><Grid /></el-icon>
                     <span class="node-name" :title="table.tableName">{{ table.tableName }}</span>
                     <span v-if="table.tableComment" class="table-comment">{{ table.tableComment }}</span>
@@ -196,12 +195,12 @@ async function preloadExpanded() {
   }
 }
 
-function openTable(connection, database, tableName, subTab = 'data') {
+function openTable(connection, database, tableName, subTab) {
   const result = store.openTableTab({
     connectionId: connection.id,
     database,
     table: tableName,
-    subTab: subTab || 'data'
+    subTab
   })
   if (!result.ok) {
     if (result.reason === 'limit') {

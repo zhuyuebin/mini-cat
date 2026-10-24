@@ -7,8 +7,12 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "spring.datasource.hikari")
 public class HikariConfigProperties {
 
-    private int maximumPoolSize = 20;
-    private int minimumIdle = 5;
+    /**
+     * 单池上限：每个"连接配置 + 目标数据库"一个池，5 个连接足够单用户使用，
+     * 同时避免多连接多库场景把目标数据库连接数打爆。
+     */
+    private int maximumPoolSize = 5;
+    private int minimumIdle = 1;
     private long connectionTimeout = 30000;
     private long idleTimeout = 600000;
     private long maxLifetime = 1800000;

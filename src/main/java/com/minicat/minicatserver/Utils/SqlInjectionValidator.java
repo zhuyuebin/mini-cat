@@ -1,5 +1,6 @@
 package com.minicat.minicatserver.Utils;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -9,6 +10,7 @@ import java.util.regex.Pattern;
 /**
  * SQL注入验证器 - 检测和防止SQL注入攻击
  */
+@Slf4j
 @Component
 public class SqlInjectionValidator {
     
@@ -63,12 +65,13 @@ public class SqlInjectionValidator {
         }
         
         String trimmedSql = sql.trim();
-        System.out.println("[SQL Validation] Checking SQL: " + trimmedSql.substring(0, Math.min(100, trimmedSql.length())));
-        
+        log.debug("SQL validation started, length={}, head={}", trimmedSql.length(),
+                trimmedSql.substring(0, Math.min(100, trimmedSql.length())));
+
         // 检查是否包含危险模式
         for (Pattern pattern : DANGEROUS_PATTERNS_COMPILED) {
             if (pattern.matcher(trimmedSql).find()) {
-                System.out.println("[SQL Validation] FAILED - Dangerous pattern detected: " + pattern.pattern());
+                log.debug("SQL validation blocked, matched pattern={}", pattern.pattern());
                 return new SqlValidationResult(false, 
                     "检测到潜在的SQL注入攻击: 禁止使用危险SQL操作");
             }
@@ -77,12 +80,12 @@ public class SqlInjectionValidator {
         // 只允许SELECT查询（用于executeQuery方法）
         String upperSql = trimmedSql.toUpperCase();
         if (!upperSql.startsWith("SELECT")) {
-            System.out.println("[SQL Validation] FAILED - Not a SELECT statement. Starts with: " + upperSql.substring(0, Math.min(20, upperSql.length())));
+            log.debug("SQL validation rejected, not a SELECT statement");
             return new SqlValidationResult(false, 
                 "只允许执行SELECT查询语句");
         }
         
-        System.out.println("[SQL Validation] PASSED");
+        log.debug("SQL validation passed");
         return new SqlValidationResult(true, "SQL验证通过");
     }
     

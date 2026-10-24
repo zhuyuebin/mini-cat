@@ -1,5 +1,6 @@
 package com.minicat.minicatserver.dto;
 
+import com.minicat.minicatserver.exception.ErrorCode;
 import lombok.Data;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
@@ -26,6 +27,14 @@ public class ApiResponseDTO<T> {
     }
 
     public static <T> ApiResponseDTO<T> error(String message) {
-        return new ApiResponseDTO<>(500, message, null, false);
+        return new ApiResponseDTO<>(ErrorCode.INTERNAL.getCode(), message, null, false);
+    }
+
+    public static <T> ApiResponseDTO<T> error(ErrorCode errorCode) {
+        return new ApiResponseDTO<>(errorCode.getCode(), errorCode.getDefaultMessage(), null, false);
+    }
+
+    public static <T> ApiResponseDTO<T> error(ErrorCode errorCode, String message) {
+        return new ApiResponseDTO<>(errorCode.getCode(), message, null, false);
     }
 }

@@ -3,25 +3,37 @@ package com.minicat.minicatserver.controller;
 import com.minicat.minicatserver.Services.DatabaseService;
 import com.minicat.minicatserver.dto.ApiResponseDTO;
 import com.minicat.minicatserver.dto.QueryResultDTO;
+import com.minicat.minicatserver.dto.TableDataPageDTO;
 import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
 import com.minicat.minicatserver.dto.CreateTableDTO;
 import com.minicat.minicatserver.dto.ImportResult;
+import com.minicat.minicatserver.dto.RowUpdateRequest;
+import com.minicat.minicatserver.dto.RowUpdateResult;
+import com.minicat.minicatserver.dto.UiSettingsDTO;
 import com.minicat.minicatserver.entity.DatabaseConnection;
+import com.minicat.minicatserver.exception.ConnectionNotFoundException;
+import com.minicat.minicatserver.exception.DatabaseException;
+import com.minicat.minicatserver.exception.ErrorCode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/database")
-@CrossOrigin(origins = "*")
 public class DatabaseController {
 
     @Autowired
     private DatabaseService databaseService;
+
+    @Value("${minicat.ui.inline-edit-enabled:true}")
+    private boolean inlineEditEnabled;
 
     @GetMapping("/connections")
     public ApiResponseDTO<List<DatabaseConnection>> getAllConnections() {
@@ -35,7 +47,7 @@ public class DatabaseController {
     public ApiResponseDTO<DatabaseConnection> getConnection(@PathVariable String id) {
         DatabaseConnection connection = databaseService.getConnectionById(id);
         if (connection == null) {
-            return ApiResponseDTO.error("Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
         // 移除密码字段，不返回给前端
         connection.setPassword(null);
@@ -53,7 +65,7 @@ public class DatabaseController {
                                                  @RequestBody DatabaseConnection connection) {
         boolean updated = databaseService.updateConnection(id, connection);
         if (!updated) {
-            return ApiResponseDTO.error("Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
         return ApiResponseDTO.success();
     }
@@ -62,7 +74,7 @@ public class DatabaseController {
     public ApiResponseDTO<Void> deleteConnection(@PathVariable String id) {
         boolean deleted = databaseService.deleteConnection(id);
         if (!deleted) {
-            return ApiResponseDTO.error("Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
         return ApiResponseDTO.success();
     }
@@ -71,28 +83,21 @@ public class DatabaseController {
     public ApiResponseDTO<Map<String, Object>> testConnection(@PathVariable String id) {
         DatabaseConnection conn = databaseService.getConnectionById(id);
         if (conn == null) {
-            return ApiResponseDTO.error(404, "Connection not found");
+            throw new ConnectionNotFoundException(id);
         }
-        
+
+        boolean success = databaseService.testConnection(id);
+        if (!success) {
+            throw new DatabaseException(ErrorCode.CONNECTION_FAILED, "连接测试失败，请检查后端日志");
+        }
+
         Map<String, Object> result = new java.util.HashMap<>();
-        try {
-            boolean success = databaseService.testConnection(id);
-            result.put("success", success);
-            result.put("message", success ? "Connection successful" : "Connection failed");
-            result.put("host", conn.getHost());
-            result.put("port", conn.getPort());
-            result.put("database", conn.getDatabaseName());
-            
-            if (!success) {
-                return ApiResponseDTO.error(500, "Connection test failed. Check backend logs for details.");
-            }
-            return ApiResponseDTO.success(result);
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "Error: " + e.getMessage());
-            result.put("error", e.getClass().getSimpleName());
-            return ApiResponseDTO.error(500, "Connection test error: " + e.getMessage());
-        }
+        result.put("success", true);
+        result.put("message", "Connection successful");
+        result.put("host", conn.getHost());
+        result.put("port", conn.getPort());
+        result.put("database", conn.getDatabaseName());
+        return ApiResponseDTO.success(result);
     }
 
     @GetMapping("/connections/{id}/databases")
@@ -117,7 +122,7 @@ public class DatabaseController {
     public ApiResponseDTO<QueryResultDTO> executeQuery(@PathVariable String id,
                                                        @RequestParam String database,
                                                        @RequestBody String sql) {
-        System.out.println("[DEBUG] Received SQL query: " + sql);
+        log.debug("Received SQL query request: connectionId={}, database={}", id, database);
         return ApiResponseDTO.success(databaseService.executeQuery(id, database, sql));
     }
 
@@ -125,7 +130,7 @@ public class DatabaseController {
     public ApiResponseDTO<Integer> executeUpdate(@PathVariable String id,
                                                  @RequestParam String database,
                                                  @RequestBody String sql) {
-        System.out.println("[DEBUG] Received SQL update: " + sql);
+        log.debug("Received SQL update request: connectionId={}, database={}", id, database);
         int affectedRows = databaseService.executeUpdate(id, database, sql);
         return ApiResponseDTO.success(affectedRows);
     }
@@ -140,6 +145,15 @@ public class DatabaseController {
     public ApiResponseDTO<Map<String, Object>> getConnectionPoolStatus(@PathVariable String id,
                                                                        @RequestParam String database) {
         return ApiResponseDTO.success(databaseService.getConnectionPoolStatus(id, database));
+    }
+
+    @GetMapping("/connections/{id}/table-data")
+    public ApiResponseDTO<TableDataPageDTO> getTableDataPage(@PathVariable String id,
+                                                             @RequestParam String database,
+                                                             @RequestParam String table,
+                                                             @RequestParam(defaultValue = "1") int page,
+                                                             @RequestParam(defaultValue = "50") int size) {
+        return ApiResponseDTO.success(databaseService.getTableDataPage(id, database, table, page, size));
     }
 
     @PostMapping("/connections/{id}/create-table")
@@ -165,5 +179,25 @@ public class DatabaseController {
                                              @RequestParam String table) {
         boolean success = databaseService.dropTable(id, database, table);
         return ApiResponseDTO.success(success);
+    }
+
+    /**
+     * 前端功能开关（当前仅内联编辑开关）。
+     */
+    @GetMapping("/settings")
+    public ApiResponseDTO<UiSettingsDTO> getUiSettings() {
+        return ApiResponseDTO.success(new UiSettingsDTO(inlineEditEnabled));
+    }
+
+    /**
+     * 单行/单元格更新：参数化 SQL + 可选乐观冲突检测。
+     */
+    @PutMapping("/connections/{id}/table-row")
+    public ApiResponseDTO<RowUpdateResult> updateRow(@PathVariable String id,
+                                                     @RequestParam String database,
+                                                     @RequestBody RowUpdateRequest request) {
+        log.debug("Received row update request: connectionId={}, database={}, table={}",
+                id, database, request == null ? null : request.getTable());
+        return ApiResponseDTO.success(databaseService.updateRow(id, database, request));
     }
 }

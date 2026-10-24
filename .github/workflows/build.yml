@@ -7,9 +7,9 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build:
+  backend-test:
+    name: Backend tests (H2 in-memory)
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v4
 
@@ -20,17 +20,69 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: Cache Maven packages
-      uses: actions/cache@v4
+    # 前端由 frontend-build job 负责，这里跳过 frontend-maven-plugin
+    - name: Run backend tests
+      run: mvn -B -Dskip.installnodenpm -Dskip.npm test
+
+    - name: Upload test reports
+      if: always()
+      uses: actions/upload-artifact@v4
       with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2
+        name: surefire-reports
+        path: target/surefire-reports
+        if-no-files-found: ignore
 
-    - name: Build with Maven
-      run: mvn clean package -DskipTests
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
 
-    - name: Upload artifact
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: MiniCat-Frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: MiniCat-Frontend
+      run: npm ci
+
+    - name: Build frontend
+      working-directory: MiniCat-Frontend
+      run: npm run build
+
+    - name: Upload frontend dist
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-dist
+        path: MiniCat-Frontend/dist
+
+  package:
+    name: Package JAR
+    runs-on: ubuntu-latest
+    needs: [ backend-test, frontend-build ]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Download frontend dist
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-dist
+        path: MiniCat-Frontend/dist
+
+    - name: Package (frontend already built)
+      run: mvn -B -DskipTests -Dskip.installnodenpm -Dskip.npm package
+
+    - name: Upload JAR
       uses: actions/upload-artifact@v4
       with:
         name: minicat-jar

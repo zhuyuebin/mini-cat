@@ -1,19 +1,23 @@
 package com.minicat.minicatserver.exception;
 
 /**
- * 数据库查询执行异常
+ * 数据库查询/执行失败异常（HTTP 500）。
  */
 public class QueryExecutionException extends DatabaseException {
-    
+
     public QueryExecutionException(String message) {
-        super(message, 500);
+        super(ErrorCode.SQL_EXECUTION_FAILED, message);
     }
-    
+
     public QueryExecutionException(String message, Throwable cause) {
-        super(message, 500, cause);
+        super(ErrorCode.SQL_EXECUTION_FAILED, message, cause);
     }
-    
+
     public static QueryExecutionException fromSql(String sql, Throwable cause) {
-        return new QueryExecutionException("Failed to execute query: " + sql, cause);
+        String summary = sql == null ? "" : sql.strip();
+        if (summary.length() > 200) {
+            summary = summary.substring(0, 200) + "...";
+        }
+        return new QueryExecutionException("SQL 执行失败: " + summary, cause);
     }
 }

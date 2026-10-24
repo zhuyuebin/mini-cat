@@ -44,11 +44,8 @@ lerna-debug.log*
 MiniCat-Frontend/dist/
 MiniCat-Frontend/node_modules/
 
-### Database Files ###
-data/*.db
-data/*.lock.db
-*.mv.db
-*.trace.db
+### Runtime Data (H2 metadata + encryption key) ###
+data/
 
 ### OS ###
 .DS_Store
@@ -75,6 +72,3 @@ application-secret.properties
 .env
 .env.local
 .env.*.local
-
-### Docker ###
-.dockerignore

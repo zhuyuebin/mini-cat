@@ -120,6 +120,15 @@ export function getConnectionPoolStatus(id, database) {
   })
 }
 
+// 获取表数据（服务端分页，返回当前页数据 + 总行数）
+export function getTableData(id, database, table, page = 1, size = 50) {
+  return request({
+    url: `/database/connections/${id}/table-data`,
+    method: 'get',
+    params: { database, table, page, size }
+  })
+}
+
 // 创建表
 export function createTable(id, database, data) {
   return request({
@@ -152,5 +161,23 @@ export function dropTable(id, database, table) {
     url: `/database/connections/${id}/tables`,
     method: 'delete',
     params: { database, table }
+  })
+}
+
+// 前端功能开关（内联编辑等）
+export function getUiSettings() {
+  return request({
+    url: '/database/settings',
+    method: 'get'
+  })
+}
+
+// 单行/单元格更新（服务端参数化 SQL + 可选 expected 乐观 CAS）
+export function updateTableCell(id, database, data) {
+  return request({
+    url: `/database/connections/${id}/table-row`,
+    method: 'put',
+    params: { database },
+    data
   })
 }

@@ -30,6 +30,12 @@ public class H2ConfigConfiguration {
     
     @Value("${spring.datasource.password:}")
     private String datasourcePassword;
+
+    /**
+     * 建表策略：生产默认 update；测试 profile 用 create-drop 保证每次测试从空库开始。
+     */
+    @Value("${minicat.datasource.ddl-auto:update}")
+    private String ddlAuto;
     
     @Bean(name = "configDataSource")
     public DataSource configDataSource() {
@@ -60,7 +66,7 @@ public class H2ConfigConfiguration {
         em.setJpaVendorAdapter(vendorAdapter);
         
         Map<String, Object> properties = new HashMap<>();
-        properties.put("hibernate.hbm2ddl.auto", "update");
+        properties.put("hibernate.hbm2ddl.auto", ddlAuto);
         properties.put("hibernate.dialect", "org.hibernate.dialect.H2Dialect");
         properties.put("hibernate.show_sql", "false");
         properties.put("hibernate.format_sql", "true");

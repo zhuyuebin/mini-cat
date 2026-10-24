@@ -58,7 +58,7 @@ if %errorlevel% neq 0 (
     echo Try running manually:
     echo   mvnw.cmd clean package -DskipTests
     echo.
-    echo For more help, see WINDOWS_START_GUIDE.md
+    echo For more help, see docs\GETTING_STARTED.md
     echo =========================================
     pause
     exit /b 1

@@ -1,15 +1,15 @@
 package com.minicat.minicatserver.exception;
 
 /**
- * 数据库连接未找到异常
+ * 数据库连接不存在异常（HTTP 404）。
  */
 public class ConnectionNotFoundException extends DatabaseException {
-    
+
     public ConnectionNotFoundException(String connectionId) {
-        super("Database connection not found: " + connectionId, 404);
+        super(ErrorCode.CONNECTION_NOT_FOUND, "连接不存在: " + connectionId);
     }
-    
+
     public ConnectionNotFoundException(String message, String connectionId) {
-        super(message + ": " + connectionId, 404);
+        super(ErrorCode.CONNECTION_NOT_FOUND, message + ": " + connectionId);
     }
 }

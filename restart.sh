@@ -22,10 +22,18 @@ else
     echo "没有发现运行中的进程"
 fi
 
-# 启动新的后端服务
+# 启动新的后端服务（脚本所在目录即项目根目录，不再硬编码部署路径）
 echo "启动新的后端服务..."
-cd /home/zhuyuebin/mini-cat
-nohup java -jar target/minicat-server-0.0.1-SNAPSHOT.jar > minicat.log 2>&1 &
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+JAR_FILE=$(ls target/minicat-server-*.jar 2>/dev/null | head -n 1)
+if [ -z "$JAR_FILE" ]; then
+    echo "❌ 未找到 JAR 文件，请先执行: ./mvnw clean package -DskipTests"
+    exit 1
+fi
+
+nohup java -jar "$JAR_FILE" > "$SCRIPT_DIR/minicat.log" 2>&1 &
 
 NEW_PID=$!
 echo "新进程已启动，PID: $NEW_PID"

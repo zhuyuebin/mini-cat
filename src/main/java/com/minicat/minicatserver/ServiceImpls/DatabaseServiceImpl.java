@@ -3,15 +3,25 @@ package com.minicat.minicatserver.ServiceImpls;
 import com.minicat.minicatserver.Services.DatabaseService;
 import com.minicat.minicatserver.Utils.ConnectionPoolManager;
 import com.minicat.minicatserver.Utils.PasswordEncryptionService;
+import com.minicat.minicatserver.Utils.RowUpdateSqlBuilder;
 import com.minicat.minicatserver.Utils.SqlInjectionValidator;
+import com.minicat.minicatserver.Utils.SqlValueNormalizer;
 import com.minicat.minicatserver.dto.*;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.entity.DatabaseConnectionEntity;
+import com.minicat.minicatserver.exception.ConnectionNotFoundException;
+import com.minicat.minicatserver.exception.DatabaseException;
+import com.minicat.minicatserver.exception.QueryExecutionException;
+import com.minicat.minicatserver.exception.RowConflictException;
+import com.minicat.minicatserver.exception.RowNotFoundException;
+import com.minicat.minicatserver.exception.SqlInjectionException;
+import com.minicat.minicatserver.exception.ValidationException;
 import com.minicat.minicatserver.repository.DatabaseConnectionRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import com.opencsv.CSVReader;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,8 +31,10 @@ import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class DatabaseServiceImpl implements DatabaseService {
     
@@ -37,6 +49,12 @@ public class DatabaseServiceImpl implements DatabaseService {
     
     @Autowired
     private SqlInjectionValidator sqlInjectionValidator;
+
+    private static final int TABLE_DATA_DEFAULT_SIZE = 50;
+    private static final int TABLE_DATA_MIN_SIZE = 10;
+    private static final int TABLE_DATA_MAX_SIZE = 200;
+    /** 表名只允许常规标识符字符，防止分页 SQL 注入 */
+    private static final Pattern TABLE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_$]+$");
 
     // Entity to DTO conversion
     private DatabaseConnection convertToDTO(DatabaseConnectionEntity entity) {
@@ -95,36 +113,37 @@ public class DatabaseServiceImpl implements DatabaseService {
     public DatabaseConnection addConnection(DatabaseConnection connection) {
         // 参数验证
         if (connection == null) {
-            throw new IllegalArgumentException("Connection cannot be null");
+            throw new ValidationException("连接信息不能为空");
         }
         if (connection.getName() == null || connection.getName().trim().isEmpty()) {
-            throw new IllegalArgumentException("Connection name is required");
+            throw new ValidationException("连接名称不能为空");
         }
         if (connection.getHost() == null || connection.getHost().trim().isEmpty()) {
-            throw new IllegalArgumentException("Host is required");
+            throw new ValidationException("主机地址不能为空");
         }
         if (connection.getPort() == null || connection.getPort() <= 0) {
-            throw new IllegalArgumentException("Valid port is required");
+            throw new ValidationException("端口号必须大于 0");
         }
         if (connection.getUsername() == null || connection.getUsername().trim().isEmpty()) {
-            throw new IllegalArgumentException("Username is required");
+            throw new ValidationException("用户名不能为空");
         }
         if (connection.getPassword() == null || connection.getPassword().trim().isEmpty()) {
-            throw new IllegalArgumentException("Password is required");
+            throw new ValidationException("密码不能为空");
         }
         if (connection.getDatabaseType() == null || connection.getDatabaseType().trim().isEmpty()) {
-            throw new IllegalArgumentException("Database type is required");
+            throw new ValidationException("数据库类型不能为空");
         }
         
         // 确保不设置 ID，让 JPA 自动生成
         connection.setId(null);
         connection.setActive(true);
         
-        // 加密密码
-        System.out.println("[DEBUG] Adding connection - Password before encryption: PLAIN TEXT");
+        // 加密密码（只记录长度，不记录任何密码内容）
         String encrypted = passwordEncryptionService.encrypt(connection.getPassword());
         connection.setPassword(encrypted);
-        System.out.println("[DEBUG] Password encrypted successfully, length: " + encrypted.length());
+        log.debug("Connection created: name={}, type={}, host={}:{}, encryptedPasswordLength={}",
+                connection.getName(), connection.getDatabaseType(), connection.getHost(),
+                connection.getPort(), encrypted.length());
         
         DatabaseConnectionEntity entity = convertToEntity(connection);
         DatabaseConnectionEntity savedEntity = connectionRepository.save(entity);
@@ -138,6 +157,33 @@ public class DatabaseServiceImpl implements DatabaseService {
             return false;
         }
         
+        // 判断连接参数是否变化；变化后需要回收旧连接池，避免继续使用旧凭据
+        boolean connectionSettingsChanged =
+                !Objects.equals(existingEntity.getHost(), connection.getHost())
+                || !Objects.equals(existingEntity.getPort(), connection.getPort())
+                || !Objects.equals(existingEntity.getUsername(), connection.getUsername())
+                || !Objects.equals(existingEntity.getDatabaseType(), connection.getDatabaseType())
+                || !Objects.equals(existingEntity.getDatabaseName(), connection.getDatabaseName())
+                || !Objects.equals(existingEntity.getCharset(), connection.getCharset());
+
+        boolean passwordChanged = false;
+        if (connection.getPassword() != null && !connection.getPassword().isEmpty()
+                && !connection.getPassword().equals(existingEntity.getPassword())) {
+            passwordChanged = true;
+            if (!passwordEncryptionService.isEncrypted(connection.getPassword())) {
+                existingEntity.setPassword(passwordEncryptionService.encrypt(connection.getPassword()));
+                log.debug("Connection password updated: id={}", id);
+            } else {
+                existingEntity.setPassword(connection.getPassword());
+                log.debug("Connection update received already-encrypted password: id={}", id);
+            }
+        }
+
+        // 先关旧池，再写库：让后续请求不会取到旧凭据的连接
+        if (connectionSettingsChanged || passwordChanged) {
+            connectionPoolManager.closePoolsForConnection(id);
+        }
+
         // 更新现有实体的字段，而不是创建新实体
         existingEntity.setName(connection.getName());
         existingEntity.setHost(connection.getHost());
@@ -147,29 +193,15 @@ public class DatabaseServiceImpl implements DatabaseService {
         existingEntity.setDatabaseName(connection.getDatabaseName());
         existingEntity.setCharset(connection.getCharset());
         existingEntity.setActive(connection.getActive());
-        
-        // 如果密码为空或null,保留原有密码
-        if (connection.getPassword() == null || connection.getPassword().isEmpty()) {
-            System.out.println("[DEBUG] Updating connection - Password is empty, keeping existing encrypted password");
-            // 不修改密码，保持原有的加密密码
-        } else {
-            // 如果密码与已加密的不同,说明是新密码,需要加密
-            if (!connection.getPassword().equals(existingEntity.getPassword())) {
-                System.out.println("[DEBUG] Updating connection - New password detected");
-                if (!passwordEncryptionService.isEncrypted(connection.getPassword())) {
-                    String encrypted = passwordEncryptionService.encrypt(connection.getPassword());
-                    existingEntity.setPassword(encrypted);
-                    System.out.println("[DEBUG] New password encrypted successfully, length: " + encrypted.length());
-                } else {
-                    System.out.println("[DEBUG] New password is already encrypted");
-                    existingEntity.setPassword(connection.getPassword());
-                }
-            } else {
-                System.out.println("[DEBUG] Updating connection - Password unchanged");
-            }
-        }
-        
+
         connectionRepository.save(existingEntity);
+
+        if (connectionSettingsChanged || passwordChanged) {
+            // 保存后再关一次：覆盖"并发请求读取旧实体并重建旧池"的窗口
+            connectionPoolManager.closePoolsForConnection(id);
+            log.info("Connection pools recycled after update: id={}, settingsChanged={}, passwordChanged={}",
+                    id, connectionSettingsChanged, passwordChanged);
+        }
         return true;
     }
 
@@ -180,11 +212,11 @@ public class DatabaseServiceImpl implements DatabaseService {
             DatabaseConnectionEntity entity = optionalEntity.get();
             DatabaseConnection removed = convertToDTO(entity);
             
-            // 关闭对应的连接池
-            String poolKey = buildPoolKey(removed, removed.getDatabaseName());
-            connectionPoolManager.closePool(poolKey);
-            
+            // 关闭该连接配置下的所有连接池（可能浏览过多个数据库）
+            connectionPoolManager.closePoolsForConnection(id);
+
             connectionRepository.deleteById(id);
+            log.info("Connection deleted: id={}, name={}", id, removed.getName());
             return true;
         }
         return false;
@@ -204,19 +236,21 @@ public class DatabaseServiceImpl implements DatabaseService {
             success = c != null && !c.isClosed();
             if (success) {
                 message = "Connection to " + conn.getHost() + ":" + conn.getPort() + " is valid";
-                System.out.println("[Connection Test] SUCCESS - " + message);
+                log.info("Connection test succeeded: name={}, target={}:{}",
+                        conn.getName(), conn.getHost(), conn.getPort());
             } else {
                 message = "Connection is null or closed";
-                System.out.println("[Connection Test] FAILED - " + message);
+                log.warn("Connection test failed (null/closed connection): name={}, target={}:{}",
+                        conn.getName(), conn.getHost(), conn.getPort());
             }
         } catch (SQLException e) {
             message = "SQL Error: " + e.getMessage();
-            System.err.println("[Connection Test] FAILED - " + message);
-            e.printStackTrace();
+            log.error("Connection test failed (SQL error): name={}, target={}:{}",
+                    conn.getName(), conn.getHost(), conn.getPort(), e);
         } catch (Exception e) {
             message = "Error: " + e.getMessage();
-            System.err.println("[Connection Test] FAILED - " + message);
-            e.printStackTrace();
+            log.error("Connection test failed: name={}, target={}:{}",
+                    conn.getName(), conn.getHost(), conn.getPort(), e);
         }
         
         // 保存测试结果到数据库
@@ -234,11 +268,10 @@ public class DatabaseServiceImpl implements DatabaseService {
                 entity.setLastTestTime(LocalDateTime.now());
                 entity.setLastTestMessage(message);
                 connectionRepository.save(entity);
-                System.out.println("[Connection Status] Saved - ID: " + id + ", Status: " + status);
+                log.debug("Connection test result saved: id={}, status={}", id, status);
             }
         } catch (Exception e) {
-            System.err.println("[Connection Status] Failed to save test result: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to save connection test result: id={}", id, e);
         }
     }
 
@@ -246,7 +279,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public List<String> getDatabases(String connectionId) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         List<String> databases = new ArrayList<>();
@@ -260,7 +293,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 databases.add(rs.getString(1));
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get databases: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取数据库列表失败", e);
         }
 
         return databases;
@@ -270,7 +303,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public List<TableInfoDTO> getTables(String connectionId, String databaseName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         List<TableInfoDTO> tables = new ArrayList<>();
@@ -296,14 +329,15 @@ public class DatabaseServiceImpl implements DatabaseService {
                     }
                 } catch (SQLException e) {
                     // 如果查询失败，设置行数为0
-                    System.err.println("Failed to get row count for table " + tableName + ": " + e.getMessage());
+                    log.warn("Failed to count rows: connectionId={}, database={}, table={}",
+                            connectionId, databaseName, tableName, e);
                     tableInfo.setRowCount(0);
                 }
                 
                 tables.add(tableInfo);
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get tables: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取表列表失败", e);
         }
 
         return tables;
@@ -313,58 +347,120 @@ public class DatabaseServiceImpl implements DatabaseService {
     public List<ColumnInfoDTO> getColumns(String connectionId, String databaseName, String tableName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         List<ColumnInfoDTO> columns = new ArrayList<>();
 
         try (Connection c = createJdbcConnection(conn, databaseName)) {
             DatabaseMetaData metaData = c.getMetaData();
-            ResultSet rs = metaData.getColumns(databaseName, null, tableName, "%");
-
-            while (rs.next()) {
-                ColumnInfoDTO columnInfo = new ColumnInfoDTO();
-                columnInfo.setColumnName(rs.getString("COLUMN_NAME"));
-                columnInfo.setDataType(rs.getString("TYPE_NAME"));
-                columnInfo.setNullable(rs.getInt("NULLABLE") == DatabaseMetaData.columnNullable);
-                columnInfo.setDefaultValue(rs.getString("COLUMN_DEF"));
-                columnInfo.setExtra(rs.getString("IS_AUTOINCREMENT"));
-                columnInfo.setColumnComment(rs.getString("REMARKS"));
-                columns.add(columnInfo);
+            try (ResultSet rs = metaData.getColumns(databaseName, null, tableName, "%")) {
+                while (rs.next()) {
+                    ColumnInfoDTO columnInfo = new ColumnInfoDTO();
+                    columnInfo.setColumnName(rs.getString("COLUMN_NAME"));
+                    columnInfo.setDataType(rs.getString("TYPE_NAME"));
+                    columnInfo.setNullable(rs.getInt("NULLABLE") == DatabaseMetaData.columnNullable);
+                    columnInfo.setDefaultValue(rs.getString("COLUMN_DEF"));
+                    // JDBC 规范中 IS_AUTOINCREMENT 的取值是 "YES"/"NO"，这里归一化成布尔值给前端，
+                    // 避免前端按 MySQL 方言的 "auto_increment" 字符串判断而失效。
+                    String autoIncrement = rs.getString("IS_AUTOINCREMENT");
+                    columnInfo.setExtra(autoIncrement);
+                    columnInfo.setAutoIncrement("YES".equalsIgnoreCase(autoIncrement));
+                    columnInfo.setRowIdentityPart(false);
+                    columnInfo.setColumnComment(rs.getString("REMARKS"));
+                    columns.add(columnInfo);
+                }
             }
 
-            // Get primary keys
-            ResultSet pkRs = metaData.getPrimaryKeys(databaseName, null, tableName);
+            // 主键列
             Set<String> primaryKeys = new HashSet<>();
-            while (pkRs.next()) {
-                primaryKeys.add(pkRs.getString("COLUMN_NAME"));
+            try (ResultSet pkRs = metaData.getPrimaryKeys(databaseName, null, tableName)) {
+                while (pkRs.next()) {
+                    primaryKeys.add(pkRs.getString("COLUMN_NAME"));
+                }
             }
 
-            // Mark primary keys
-            for (ColumnInfoDTO col : columns) {
-                if (primaryKeys.contains(col.getColumnName())) {
-                    col.setColumnKey("PRI");
+            // 行标识列：优先主键；无主键时使用第一个「UNIQUE 且所有列 NOT NULL」索引
+            Set<String> rowIdentityColumns = findRowIdentityColumns(metaData, databaseName, tableName, columns, primaryKeys);
+
+            for (ColumnInfoDTO column : columns) {
+                String columnName = column.getColumnName();
+                if (primaryKeys.contains(columnName)) {
+                    column.setColumnKey("PRI");
+                    column.setRowIdentityPart(true);
+                } else if (rowIdentityColumns.contains(columnName)) {
+                    column.setColumnKey("UNI");
+                    column.setRowIdentityPart(true);
+                } else {
+                    column.setRowIdentityPart(false);
                 }
             }
 
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get columns: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取列信息失败", e);
         }
 
         return columns;
+    }
+
+    /**
+     * 计算可唯一定位数据行的列：
+     * 有主键 → 主键列；无主键 → 第一个「唯一索引且所有列 NOT NULL」的索引列（按索引列顺序）。
+     */
+    private Set<String> findRowIdentityColumns(DatabaseMetaData metaData,
+                                               String catalog,
+                                               String tableName,
+                                               List<ColumnInfoDTO> columns,
+                                               Set<String> primaryKeys) {
+        if (!primaryKeys.isEmpty()) {
+            return primaryKeys;
+        }
+
+        Map<String, Boolean> notNullByColumn = new HashMap<>();
+        for (ColumnInfoDTO column : columns) {
+            notNullByColumn.put(column.getColumnName(), Boolean.FALSE.equals(column.getNullable()));
+        }
+
+        Map<String, Map<Short, String>> uniqueIndexes = new LinkedHashMap<>();
+        try (ResultSet rs = metaData.getIndexInfo(catalog, null, tableName, true, true)) {
+            while (rs.next()) {
+                String indexName = rs.getString("INDEX_NAME");
+                String columnName = rs.getString("COLUMN_NAME");
+                if (indexName == null || columnName == null) {
+                    continue; // 统计信息行
+                }
+                if (rs.getBoolean("NON_UNIQUE")) {
+                    continue;
+                }
+                short ordinal = rs.getShort("ORDINAL_POSITION");
+                uniqueIndexes.computeIfAbsent(indexName, key -> new TreeMap<>()).put(ordinal, columnName);
+            }
+        } catch (SQLException e) {
+            log.warn("Failed to read unique indexes: table={}", tableName, e);
+            return Set.of();
+        }
+
+        for (Map<Short, String> indexColumns : uniqueIndexes.values()) {
+            List<String> names = new ArrayList<>(indexColumns.values());
+            boolean allNotNull = names.stream().allMatch(name -> Boolean.TRUE.equals(notNullByColumn.get(name)));
+            if (allNotNull) {
+                return new LinkedHashSet<>(names);
+            }
+        }
+        return Set.of();
     }
 
     @Override
     public QueryResultDTO executeQuery(String connectionId, String databaseName, String sql) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         // SQL注入验证
         SqlInjectionValidator.SqlValidationResult validation = sqlInjectionValidator.validate(sql);
         if (!validation.isValid()) {
-            throw new RuntimeException("SQL验证失败: " + validation.getMessage());
+            throw new SqlInjectionException(validation.getMessage());
         }
 
         QueryResultDTO result = new QueryResultDTO();
@@ -395,10 +491,12 @@ public class DatabaseServiceImpl implements DatabaseService {
             result.setTotalRows(rows.size());
 
         } catch (SQLException e) {
-            throw new RuntimeException("Query execution failed: " + e.getMessage(), e);
+            throw QueryExecutionException.fromSql(sql, e);
         } finally {
             long endTime = System.currentTimeMillis();
             result.setExecutionTime(endTime - startTime);
+            log.debug("Query executed: connectionId={}, database={}, rows={}, cost={}ms",
+                    connectionId, databaseName, result.getTotalRows(), result.getExecutionTime());
         }
 
         return result;
@@ -408,7 +506,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public int executeUpdate(String connectionId, String databaseName, String sql) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         // 根据SQL类型选择不同的验证方法
@@ -422,20 +520,197 @@ public class DatabaseServiceImpl implements DatabaseService {
         } else if (upperSql.startsWith("DROP TABLE")) {
             validation = sqlInjectionValidator.validateDropTable(sql);
         } else {
-            throw new RuntimeException("不支持的SQL操作类型，仅支持INSERT、UPDATE、DELETE、DROP TABLE");
+            throw new ValidationException("不支持的SQL操作类型，仅支持 INSERT、UPDATE、DELETE、DROP TABLE");
         }
         
         if (!validation.isValid()) {
-            throw new RuntimeException("SQL验证失败: " + validation.getMessage());
+            throw new SqlInjectionException(validation.getMessage());
         }
 
         try (Connection c = createJdbcConnection(conn, databaseName);
              Statement stmt = c.createStatement()) {
 
-            return stmt.executeUpdate(sql);
+            int affectedRows = stmt.executeUpdate(sql);
+            log.info("DML executed: connectionId={}, database={}, affectedRows={}",
+                    connectionId, databaseName, affectedRows);
+            return affectedRows;
 
         } catch (SQLException e) {
-            throw new RuntimeException("Update execution failed: " + e.getMessage(), e);
+            throw QueryExecutionException.fromSql(sql, e);
+        }
+    }
+
+    @Override
+    public RowUpdateResult updateRow(String connectionId, String databaseName, RowUpdateRequest request) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new ConnectionNotFoundException(connectionId);
+        }
+        if (request == null) {
+            throw new ValidationException("更新请求不能为空");
+        }
+        if (databaseName == null || databaseName.isBlank()) {
+            throw new ValidationException("数据库名不能为空");
+        }
+        if (!RowUpdateSqlBuilder.isIdentifier(request.getTable())) {
+            throw new ValidationException("表名不合法");
+        }
+        if (request.getChanges() == null || request.getChanges().isEmpty()) {
+            throw new ValidationException("没有需要修改的列");
+        }
+        if (request.getKeys() == null || request.getKeys().isEmpty()) {
+            throw new ValidationException("缺少行标识值");
+        }
+
+        // 列元数据（含行标识列判定），同时校验表是否存在
+        List<ColumnInfoDTO> columns = getColumns(connectionId, databaseName, request.getTable());
+        if (columns.isEmpty()) {
+            throw new ValidationException("表不存在或没有列定义");
+        }
+        Map<String, ColumnInfoDTO> columnMap = new LinkedHashMap<>();
+        for (ColumnInfoDTO column : columns) {
+            columnMap.put(column.getColumnName(), column);
+        }
+
+        List<String> identityColumns = new ArrayList<>();
+        for (ColumnInfoDTO column : columns) {
+            if (Boolean.TRUE.equals(column.getRowIdentityPart())) {
+                identityColumns.add(column.getColumnName());
+            }
+        }
+        if (identityColumns.isEmpty()) {
+            throw new ValidationException("该表没有主键或唯一非空索引，无法安全定位数据行");
+        }
+
+        List<String> changeColumns = new ArrayList<>(request.getChanges().keySet());
+        for (String columnName : changeColumns) {
+            ColumnInfoDTO column = columnMap.get(columnName);
+            if (column == null) {
+                throw new ValidationException("列不存在: " + columnName);
+            }
+            if (Boolean.TRUE.equals(column.getRowIdentityPart())) {
+                throw new ValidationException("行标识列不允许直接修改: " + columnName);
+            }
+            if (Boolean.TRUE.equals(column.getAutoIncrement())) {
+                throw new ValidationException("自增列不允许直接修改: " + columnName);
+            }
+            if (!SqlValueNormalizer.isEditableType(column.getDataType())) {
+                throw new ValidationException("该列类型不支持编辑: " + columnName + " (" + column.getDataType() + ")");
+            }
+        }
+
+        for (String identityColumn : identityColumns) {
+            if (!request.getKeys().containsKey(identityColumn)) {
+                throw new ValidationException("缺少行标识列: " + identityColumn);
+            }
+        }
+        for (String keyColumn : request.getKeys().keySet()) {
+            if (!identityColumns.contains(keyColumn)) {
+                throw new ValidationException("非法的行标识列: " + keyColumn);
+            }
+        }
+
+        Map<String, Object> expected = request.getExpected() == null ? Map.of() : request.getExpected();
+        List<String> expectedColumns = new ArrayList<>(expected.keySet());
+        Set<String> expectedNullColumns = new LinkedHashSet<>();
+        for (String expectedColumn : expectedColumns) {
+            if (!request.getChanges().containsKey(expectedColumn)) {
+                throw new ValidationException("expected 只能是本次修改的列: " + expectedColumn);
+            }
+            if (expected.get(expectedColumn) == null) {
+                expectedNullColumns.add(expectedColumn);
+            }
+        }
+
+        String sql = RowUpdateSqlBuilder.buildUpdate(
+                request.getTable(), changeColumns, identityColumns, expectedColumns, expectedNullColumns);
+
+        try (Connection c = createJdbcConnection(conn, databaseName)) {
+            int affectedRows;
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                int index = 1;
+                for (String columnName : changeColumns) {
+                    index = bindValue(ps, index, columnMap.get(columnName), request.getChanges().get(columnName));
+                }
+                for (String identityColumn : identityColumns) {
+                    index = bindValue(ps, index, columnMap.get(identityColumn), request.getKeys().get(identityColumn));
+                }
+                for (String expectedColumn : expectedColumns) {
+                    if (expectedNullColumns.contains(expectedColumn)) {
+                        continue; // IS NULL 不占位
+                    }
+                    index = bindValue(ps, index, columnMap.get(expectedColumn), expected.get(expectedColumn));
+                }
+                affectedRows = ps.executeUpdate();
+            }
+
+            if (affectedRows == 0) {
+                // 区分「行不存在」与「乐观冲突」：0 行且带 expected 时，行还在说明是被别人改过
+                boolean rowExists = existsByKeys(c, request.getTable(), identityColumns, request.getKeys(), columnMap);
+                if (rowExists && !expectedColumns.isEmpty()) {
+                    throw new RowConflictException("数据行已被修改，请刷新后重试");
+                }
+                throw new RowNotFoundException("数据行不存在或已被删除");
+            }
+
+            Map<String, Object> updatedRow = selectRowByKeys(c, request.getTable(), identityColumns, request.getKeys(), columnMap);
+            log.info("Row updated: connectionId={}, database={}, table={}, identity={}, changed={}, affectedRows={}",
+                    connectionId, databaseName, request.getTable(), identityColumns, changeColumns, affectedRows);
+
+            RowUpdateResult result = new RowUpdateResult();
+            result.setAffectedRows(affectedRows);
+            result.setRow(updatedRow);
+            return result;
+        } catch (SQLException e) {
+            throw QueryExecutionException.fromSql(sql, e);
+        }
+    }
+
+    private int bindValue(PreparedStatement ps, int index, ColumnInfoDTO column, Object value) throws SQLException {
+        Object normalized = SqlValueNormalizer.normalize(column == null ? null : column.getDataType(), value);
+        ps.setObject(index, normalized);
+        return index + 1;
+    }
+
+    private boolean existsByKeys(Connection connection,
+                                 String table,
+                                 List<String> identityColumns,
+                                 Map<String, Object> keys,
+                                 Map<String, ColumnInfoDTO> columnMap) throws SQLException {
+        String sql = RowUpdateSqlBuilder.buildExistsByKeys(table, identityColumns);
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            int index = 1;
+            for (String identityColumn : identityColumns) {
+                index = bindValue(ps, index, columnMap.get(identityColumn), keys.get(identityColumn));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private Map<String, Object> selectRowByKeys(Connection connection,
+                                                String table,
+                                                List<String> identityColumns,
+                                                Map<String, Object> keys,
+                                                Map<String, ColumnInfoDTO> columnMap) throws SQLException {
+        String sql = RowUpdateSqlBuilder.buildSelectByKeys(table, identityColumns);
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            int index = 1;
+            for (String identityColumn : identityColumns) {
+                index = bindValue(ps, index, columnMap.get(identityColumn), keys.get(identityColumn));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    throw new RowNotFoundException("数据行不存在或已被删除");
+                }
+                ResultSetMetaData metaData = rs.getMetaData();
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (int i = 1; i <= metaData.getColumnCount(); i++) {
+                    row.put(metaData.getColumnLabel(i), rs.getObject(i));
+                }
+                return row;
+            }
         }
     }
 
@@ -443,7 +718,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public Map<String, Object> getDatabaseInfo(String connectionId, String databaseName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         Map<String, Object> info = new HashMap<>();
@@ -458,7 +733,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             info.put("url", metaData.getURL());
 
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to get database info: " + e.getMessage(), e);
+            throw new QueryExecutionException("获取数据库信息失败", e);
         }
 
         return info;
@@ -468,10 +743,10 @@ public class DatabaseServiceImpl implements DatabaseService {
     public Map<String, Object> getConnectionPoolStatus(String connectionId, String databaseName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
-        String poolKey = buildPoolKey(conn, databaseName);
+        ConnectionPoolManager.PoolKey poolKey = new ConnectionPoolManager.PoolKey(connectionId, databaseName);
         Map<String, Object> status = connectionPoolManager.getPoolStatus(poolKey);
         
         if (status == null) {
@@ -484,18 +759,98 @@ public class DatabaseServiceImpl implements DatabaseService {
     }
 
     @Override
+    public TableDataPageDTO getTableDataPage(String connectionId, String databaseName,
+                                             String tableName, int page, int size) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new ConnectionNotFoundException(connectionId);
+        }
+        if (tableName == null || tableName.isBlank() || !TABLE_NAME_PATTERN.matcher(tableName).matches()) {
+            throw new ValidationException("表名不合法: " + tableName);
+        }
+
+        int safePage = clampPage(page);
+        int safeSize = clampSize(size);
+        int offset = (safePage - 1) * safeSize;
+        String quotedTable = "`" + tableName + "`";
+
+        TableDataPageDTO result = new TableDataPageDTO();
+        result.setPage(safePage);
+        result.setSize(safeSize);
+
+        try (Connection c = createJdbcConnection(conn, databaseName)) {
+            // 总行数（供前端分页器使用；大表 COUNT(*) 会较慢，M2 可做缓存/估算）
+            try (Statement stmt = c.createStatement();
+                 ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + quotedTable)) {
+                if (rs.next()) {
+                    result.setTotal(rs.getLong(1));
+                }
+            }
+
+            List<String> columns = new ArrayList<>();
+            List<Map<String, Object>> rows = new ArrayList<>();
+            String pageSql = "SELECT * FROM " + quotedTable + " LIMIT " + safeSize + " OFFSET " + offset;
+            try (Statement stmt = c.createStatement();
+                 ResultSet rs = stmt.executeQuery(pageSql)) {
+                ResultSetMetaData metaData = rs.getMetaData();
+                int columnCount = metaData.getColumnCount();
+                for (int i = 1; i <= columnCount; i++) {
+                    columns.add(metaData.getColumnLabel(i));
+                }
+                while (rs.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (String column : columns) {
+                        row.put(column, rs.getObject(column));
+                    }
+                    rows.add(row);
+                }
+            }
+
+            result.setColumns(columns);
+            result.setRows(rows);
+            log.debug("Table data page loaded: connectionId={}, database={}, table={}, page={}, size={}, total={}",
+                    connectionId, databaseName, tableName, safePage, safeSize, result.getTotal());
+        } catch (SQLException e) {
+            throw new QueryExecutionException("加载表数据失败: " + e.getMessage(), e);
+        }
+
+        return result;
+    }
+
+    static int clampPage(int page) {
+        return Math.max(page, 1);
+    }
+
+    static int clampSize(int size) {
+        if (size <= 0) {
+            return TABLE_DATA_DEFAULT_SIZE;
+        }
+        return Math.min(Math.max(size, TABLE_DATA_MIN_SIZE), TABLE_DATA_MAX_SIZE);
+    }
+
+    @Override
     public boolean createTable(String connectionId, String databaseName, CreateTableDTO createTableDTO) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("Connection not found");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         if (createTableDTO == null || createTableDTO.getTableName() == null || createTableDTO.getTableName().trim().isEmpty()) {
-            throw new RuntimeException("表名不能为空");
+            throw new ValidationException("表名不能为空");
         }
 
         if (createTableDTO.getColumns() == null || createTableDTO.getColumns().isEmpty()) {
-            throw new RuntimeException("至少需要定义一个列");
+            throw new ValidationException("至少需要定义一个列");
+        }
+
+        // 列定义基础校验，避免拼接 SQL 时出现 NPE 或注入
+        for (CreateTableDTO.ColumnDefinition col : createTableDTO.getColumns()) {
+            if (col == null || col.getColumnName() == null || col.getColumnName().trim().isEmpty()) {
+                throw new ValidationException("列名不能为空");
+            }
+            if (col.getDataType() == null || col.getDataType().trim().isEmpty()) {
+                throw new ValidationException("列 " + col.getColumnName() + " 的数据类型不能为空");
+            }
         }
 
         // 构建 CREATE TABLE SQL
@@ -584,19 +939,20 @@ public class DatabaseServiceImpl implements DatabaseService {
         sql.append(";");
 
         String createSql = sql.toString();
-        System.out.println("[DEBUG] Creating table with SQL: " + createSql);
+        log.debug("Creating table: connectionId={}, database={}, sql={}", connectionId, databaseName, createSql);
 
         try (Connection c = createJdbcConnection(conn, databaseName);
              Statement stmt = c.createStatement()) {
             
             stmt.executeUpdate(createSql);
-            System.out.println("[DEBUG] Table created successfully: " + createTableDTO.getTableName());
+            log.info("Table created: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, createTableDTO.getTableName());
             return true;
 
         } catch (SQLException e) {
-            System.err.println("[ERROR] Failed to create table: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("创建表失败: " + e.getMessage(), e);
+            log.error("Failed to create table: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, createTableDTO.getTableName(), e);
+            throw new QueryExecutionException("创建表失败: " + e.getMessage(), e);
         }
     }
 
@@ -604,7 +960,7 @@ public class DatabaseServiceImpl implements DatabaseService {
     public ImportResult importData(String connectionId, String databaseName, String tableName, MultipartFile file) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("连接不存在");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         ImportResult result = new ImportResult();
@@ -617,7 +973,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             // 1. 获取表结构
             List<ColumnInfoDTO> columns = getColumns(connectionId, databaseName, tableName);
             if (columns.isEmpty()) {
-                throw new RuntimeException("表不存在或没有列定义");
+                throw new ValidationException("表不存在或没有列定义");
             }
 
             Map<String, ColumnInfoDTO> columnMap = new LinkedHashMap<>();
@@ -628,7 +984,7 @@ public class DatabaseServiceImpl implements DatabaseService {
             // 2. 解析文件
             List<String[]> rows = parseFile(file);
             if (rows.isEmpty()) {
-                throw new RuntimeException("文件中没有数据");
+                throw new ValidationException("文件中没有数据");
             }
 
             // 3. 校验表头
@@ -667,7 +1023,7 @@ public class DatabaseServiceImpl implements DatabaseService {
                 if (!extraColumns.isEmpty()) {
                     errorMsg.append("多余列: ").append(String.join(", ", extraColumns));
                 }
-                throw new RuntimeException(errorMsg.toString());
+                throw new ValidationException(errorMsg.toString());
             }
 
             // 4. 批量插入数据
@@ -685,23 +1041,27 @@ public class DatabaseServiceImpl implements DatabaseService {
                             result.setSuccessRows(result.getSuccessRows() + 1);
                         } catch (Exception e) {
                             result.setFailedRows(result.getFailedRows() + 1);
-                            System.err.println("导入第 " + i + " 行失败: " + e.getMessage());
+                            log.warn("Import row prepared failed: connectionId={}, table={}, row={}",
+                                    connectionId, tableName, i, e);
                         }
                     }
                     ps.executeBatch();
                     c.commit();
                 } catch (Exception e) {
                     c.rollback();
-                    throw new RuntimeException("批量插入数据失败: " + e.getMessage(), e);
+                    throw new QueryExecutionException("批量插入数据失败: " + e.getMessage(), e);
                 }
             }
 
             result.setSuccess(true);
             result.setMessage("导入完成。总计: " + result.getTotalRows() + ", 成功: " + result.getSuccessRows() + ", 失败: " + result.getFailedRows());
 
+        } catch (DatabaseException e) {
+            result.setMessage("导入失败: " + e.getMessage());
+            throw e;
         } catch (Exception e) {
             result.setMessage("导入失败: " + e.getMessage());
-            throw new RuntimeException(e.getMessage(), e);
+            throw new QueryExecutionException("导入失败: " + e.getMessage(), e);
         }
 
         return result;
@@ -711,35 +1071,36 @@ public class DatabaseServiceImpl implements DatabaseService {
     public boolean dropTable(String connectionId, String databaseName, String tableName) {
         DatabaseConnection conn = getConnectionById(connectionId);
         if (conn == null) {
-            throw new RuntimeException("连接不存在");
+            throw new ConnectionNotFoundException(connectionId);
         }
 
         if (tableName == null || tableName.trim().isEmpty()) {
-            throw new RuntimeException("表名不能为空");
+            throw new ValidationException("表名不能为空");
         }
 
         // 构建 DROP TABLE SQL
         String dropSql = "DROP TABLE " + tableName;
-        System.out.println("[DEBUG] Dropping table with SQL: " + dropSql);
+        log.debug("Dropping table: connectionId={}, database={}, sql={}", connectionId, databaseName, dropSql);
 
         try (Connection c = createJdbcConnection(conn, databaseName);
              Statement stmt = c.createStatement()) {
             
             stmt.executeUpdate(dropSql);
-            System.out.println("[DEBUG] Table dropped successfully: " + tableName);
+            log.info("Table dropped: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, tableName);
             return true;
 
         } catch (SQLException e) {
-            System.err.println("[ERROR] Failed to drop table: " + e.getMessage());
-            e.printStackTrace();
-            throw new RuntimeException("删除表失败: " + e.getMessage(), e);
+            log.error("Failed to drop table: connectionId={}, database={}, table={}",
+                    connectionId, databaseName, tableName, e);
+            throw new QueryExecutionException("删除表失败: " + e.getMessage(), e);
         }
     }
 
     private List<String[]> parseFile(MultipartFile file) throws Exception {
         String fileName = file.getOriginalFilename();
         if (fileName == null) {
-            throw new RuntimeException("文件名不能为空");
+            throw new ValidationException("文件名不能为空");
         }
 
         if (fileName.endsWith(".csv")) {
@@ -747,7 +1108,7 @@ public class DatabaseServiceImpl implements DatabaseService {
         } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
             return parseExcel(file);
         } else {
-            throw new RuntimeException("不支持的文件格式，仅支持 .csv, .xlsx, .xls");
+            throw new ValidationException("不支持的文件格式，仅支持 .csv, .xlsx, .xls");
         }
     }
 
@@ -858,40 +1219,26 @@ public class DatabaseServiceImpl implements DatabaseService {
 
     private Connection createJdbcConnection(DatabaseConnection conn, String databaseName) throws SQLException {
         String jdbcUrl = buildJdbcUrl(conn, databaseName);
-        String poolKey = buildPoolKey(conn, databaseName);
-        
-        // 解密密码
+        ConnectionPoolManager.PoolKey poolKey = new ConnectionPoolManager.PoolKey(conn.getId(), databaseName);
+
+        // 解密密码（绝不记录密码内容）
         String decryptedPassword = conn.getPassword();
-        System.out.println("[DEBUG] Original password from connection: " + (decryptedPassword == null ? "NULL" : (decryptedPassword.isEmpty() ? "EMPTY" : "PRESENT (length=" + decryptedPassword.length() + ")")));
-        
         if (decryptedPassword != null && !decryptedPassword.isEmpty()) {
-            System.out.println("[DEBUG] Password is encrypted: " + passwordEncryptionService.isEncrypted(decryptedPassword));
             if (passwordEncryptionService.isEncrypted(decryptedPassword)) {
                 try {
                     decryptedPassword = passwordEncryptionService.decrypt(decryptedPassword);
-                    System.out.println("[DEBUG] Password decrypted successfully");
                 } catch (Exception e) {
-                    System.err.println("[ERROR] Failed to decrypt password: " + e.getMessage());
-                    e.printStackTrace();
+                    log.error("Failed to decrypt password: connectionId={}, name={}",
+                            conn.getId(), conn.getName(), e);
                     throw new SQLException("Failed to decrypt password: " + e.getMessage(), e);
                 }
-            } else {
-                System.out.println("[DEBUG] Password is not encrypted, using as-is");
             }
         } else {
-            System.err.println("[ERROR] Password is null or empty for connection: " + conn.getName() + " (" + conn.getHost() + ":" + conn.getPort() + ")");
+            log.error("Connection password is empty: connectionId={}, name={}, target={}:{}",
+                    conn.getId(), conn.getName(), conn.getHost(), conn.getPort());
         }
-        
-        System.out.println("[DEBUG] Final password to use: " + (decryptedPassword == null ? "NULL" : (decryptedPassword.isEmpty() ? "EMPTY" : "PRESENT")));
-        return connectionPoolManager.getConnection(poolKey, jdbcUrl, conn.getUsername(), decryptedPassword);
-    }
 
-    private String buildPoolKey(DatabaseConnection conn, String databaseName) {
-        return String.format("%s_%s_%d_%s", 
-            conn.getDatabaseType().toLowerCase(),
-            conn.getHost(), 
-            conn.getPort(), 
-            databaseName != null ? databaseName : "");
+        return connectionPoolManager.getConnection(poolKey, jdbcUrl, conn.getUsername(), decryptedPassword);
     }
 
     private String buildJdbcUrl(DatabaseConnection conn, String databaseName) {

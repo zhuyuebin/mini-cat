@@ -3,8 +3,8 @@
     <WorkspaceTabs />
     <div class="workspace-body">
       <WelcomeView v-if="!store.activeTab" embedded />
-      <TableWorkspace v-else-if="store.activeTab.type === 'table'" :tab="store.activeTab" />
-      <QueryWorkspace v-else :tab="store.activeTab" />
+      <TableWorkspace v-else-if="store.activeTab.type === 'table'" :key="store.activeTab.id" :tab="store.activeTab" />
+      <QueryWorkspace v-else :key="store.activeTab.id" :tab="store.activeTab" />
     </div>
   </div>
 </template>

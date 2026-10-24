@@ -67,15 +67,16 @@ MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器�
 - **默认只监听 `127.0.0.1`**，避免无意中暴露到局域网
 
 ### ⚡ 性能优化
-- 每个数据库连接独立的 **HikariCP 连接池**
+- 每个「连接配置 + 目标数据库」独立一个 **HikariCP 连接池**，单池上限 **5**、最小空闲 1（避免多库时连接数爆炸）
 - MySQL 专项优化（预编译语句缓存、批量改写、utf8mb4 字符集）
 - PostgreSQL 专项优化（prepare threshold 调优）
 - 连接池状态接口（`/pool-status`；前端监控面板规划中）
+- 表数据服务端分页（`COUNT(*)` + `LIMIT/OFFSET`，不再由前端拼 SQL）
 
 ### 🚀 部署就绪
-- **GitHub Actions** CI/CD 自动构建
+- **GitHub Actions** CI：后端测试（H2 内存库）/ 前端构建 / 打包三个独立 job
 - **Linux/macOS**（`start.sh`）和 **Windows**（`start_win.bat`）一键启动脚本
-- 生产环境配置（`application-prod.properties`）：Gzip 压缩、日志文件输出、连接池扩容
+- 生产环境配置（`application-prod.properties`）：Gzip 压缩、日志文件输出、连接池参数
 
 ---
 
@@ -95,6 +96,7 @@ MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器�
 | **SQL 格式化** | sql-formatter |
 | **Excel 解析** | Apache POI 5.2 |
 | **CSV 解析** | OpenCSV 5.7 |
+| **测试** | JUnit 5 + MockMvc + H2 内存库（完全隔离） |
 | **构建工具** | Maven + Frontend Maven Plugin |
 
 ---
@@ -166,30 +168,33 @@ mini-cat/
 │   │   ├── HikariConfigProperties.java      # 连接池参数配置
 │   │   └── SecurityConfig.java              # Spring Security（禁用 CSRF，开放所有请求）
 │   ├── controller/
-│   │   └── DatabaseController.java          # REST API 控制器（16 个接口）
+│   │   └── DatabaseController.java          # REST API 控制器（17 个接口）
 │   ├── Services/
 │   │   └── DatabaseService.java             # 服务层接口
 │   ├── ServiceImpls/
-│   │   └── DatabaseServiceImpl.java         # 核心业务逻辑（约 925 行）
+│   │   └── DatabaseServiceImpl.java         # 核心业务逻辑
 │   ├── dto/
 │   │   ├── ApiResponseDTO.java              # 统一 API 响应封装
 │   │   ├── ColumnInfoDTO.java               # 列元数据
 │   │   ├── CreateTableDTO.java              # 建表请求
 │   │   ├── ImportResult.java                # 导入结果
 │   │   ├── QueryResultDTO.java              # 查询结果
+│   │   ├── TableDataPageDTO.java            # 表数据分页结果
 │   │   └── TableInfoDTO.java                # 表元数据
 │   ├── entity/
 │   │   ├── DatabaseConnection.java          # 连接 DTO（返回前端）
 │   │   └── DatabaseConnectionEntity.java    # JPA 实体（存储于 H2）
 │   ├── exception/
-│   │   ├── GlobalExceptionHandler.java      # 全局异常处理器（覆盖 10+ 异常类型）
+│   │   ├── ErrorCode.java                   # 业务错误码（4xxxx/5xxxx + HTTP 状态）
+│   │   ├── GlobalExceptionHandler.java      # 全局异常处理器（按 ErrorCode 统一映射）
 │   │   └── ...                              # 自定义异常类
 │   ├── repository/
 │   │   └── DatabaseConnectionRepository.java
 │   └── Utils/
-│       ├── ConnectionPoolManager.java       # HikariCP 连接池生命周期管理
+│       ├── ConnectionPoolManager.java       # 连接池生命周期（按 connectionId + 并发保护）
 │       ├── PasswordEncryptionService.java   # AES 密码加解密
 │       └── SqlInjectionValidator.java       # SQL 注入检测（4 种验证模式）
+├── src/test/java/                            # 测试：纯单测 + H2 集成 + MockMvc 契约
 ├── MiniCat-Frontend/
 │   ├── src/
 │   │   ├── api/database.js                  # Axios API 客户端
@@ -253,6 +258,7 @@ mini-cat/
 |------|------|------|
 | `POST` | `/connections/{id}/create-table?database={db}` | 创建数据表 |
 | `DELETE` | `/connections/{id}/tables?database={db}&table={tbl}` | 删除数据表 |
+| `GET` | `/connections/{id}/table-data?database={db}&table={tbl}&page=1&size=50` | 表数据服务端分页（返回 rows + total） |
 
 ### 数据导入
 | 方法 | 接口 | 说明 |
@@ -278,6 +284,7 @@ server.port=8888                              # HTTP 端口
 server.address=127.0.0.1                      # 默认只监听本机
 spring.servlet.multipart.max-file-size=50MB   # CSV/Excel 导入大小上限
 minicat.security.key-file=./data/secret.key   # 连接密码加密密钥文件
+spring.datasource.hikari.maximum-pool-size=5  # 每个目标库连接池上限
 spring.application.name=MiniCat
 logging.level.com.minicat=DEBUG               # 包级别调试日志
 ```
@@ -295,7 +302,7 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 - **WARN** 级别日志，输出到 `logs/minicat.log`
 - **DevTools** 禁用
 - **H2 控制台** 禁用
-- **连接池**：最小 10、最大 20 个连接
+- **连接池**：单池最大 5、最小空闲 1（`spring.datasource.hikari.*`）
 - **JPA**：`ddl-auto=update`，SQL 日志关闭
 
 ### 元数据与密钥
@@ -321,15 +328,54 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 
 ---
 
+## 🧪 错误码
+
+响应体统一为 `{ code, message, data, success }`，失败时 HTTP 状态码与业务 `code` 对应如下：
+
+| code | HTTP | 含义 |
+|------|------|------|
+| 200 | 200 | 成功 |
+| 40001 | 400 | 参数校验失败 |
+| 40301 | 403 | SQL 被安全策略拦截 |
+| 40401 | 404 | 连接不存在 |
+| 40901 | 409 | 数据冲突（乐观锁） |
+| 50001 | 500 | SQL 执行失败 |
+| 50002 | 500 | 数据库连接失败 |
+| 50000 | 500 | 内部错误 |
+
+前端 Axios 拦截器同时兼容「HTTP 200 + success=false」与「语义化 HTTP 状态码」两种失败形态，并统一弹出后端返回的 message。
+
+---
+
 ## ⚠️ 已知限制
 
 - 暂无登录认证、操作审计、多用户/权限体系；
 - PostgreSQL 目前只有"测试连接"可用，库表浏览与建表仍按 MySQL 方言实现；
 - 查询结果一次性加载到内存，没有行数上限与执行超时（大表查询需谨慎）；
-- 表数据分页会额外执行一次 `COUNT(*)`，超大表翻页会较慢；
+- 表数据分页由服务端执行 `COUNT(*)` + `LIMIT/OFFSET`，超大表 COUNT 会较慢（规划中做估算/缓存）；
 - CSV/Excel 导入要求表头与表列完全一致，暂不支持列子集映射；
 - 连接"选中"状态存在前端内存中，刷新页面会丢失（规划中）；
 - 连接池状态、数据库信息两个接口后端已实现，但前端尚无对应面板。
+
+---
+
+## 🧪 测试
+
+```bash
+# 后端全部测试（H2 内存库隔离：元数据库、密钥、测试数据都在 target/ 下，不污染 ./data）
+./mvnw test
+
+# 只跳过前端构建、快速跑测试
+./mvnw -Dskip.installnodenpm -Dskip.npm test
+```
+
+| 层级 | 内容 |
+|------|------|
+| L1 纯单测 | `SqlInjectionValidatorTest`、`PasswordEncryptionServiceTest`、`ConnectionPoolManagerTest`、`TableDataPaginationTest` |
+| L2 集成测试 | `DatabaseConnectionServiceTest`（H2 内存元数据库）：加密落库、改密码、删除、连接池回收、语义异常 |
+| L3 Web 契约 | `DatabaseControllerTest`（MockMvc）：状态码 / 业务错误码 / 密码屏蔽 / 分页参数校验 |
+
+CI 使用 GitHub Actions 三个 job：`backend-test`（真跑测试）、`frontend-build`、`package`。
 
 ---
 
@@ -348,6 +394,8 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 ## 📝 更新日志
 
 详见 [CHANGELOG.md](MD-Files/CHANGELOG.md)。
+
+**v1.1.0（M1 工程质量，待发布）** — 测试护栏（H2 内存隔离，36 个用例）+ 全量 slf4j 日志 + 语义化异常/业务错误码 + 连接池按 connectionId 生命周期管理（单池 5、并发保护）+ 表数据服务端分页接口 + CI 真跑测试。
 
 **v1.0.1（M0 修复，待发布）** — 安全限位（默认仅监听本机、移除通配 CORS、加密密钥外置）+ 修复表结构字段/自增识别/分页三处契约 bug + 后端错误信息透传 + 导入大小限制 + 仓库清理与文档诚实化。
 

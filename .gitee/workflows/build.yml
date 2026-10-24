@@ -1,4 +1,8 @@
-# Gitee Go 流水线配置
+# Gitee Go 流水线配置（实验性）
+#
+# 注意：该配置未在 Gitee Go 环境持续验证，构建/测试能力以 GitHub Actions
+# （.github/workflows/build.yml）为准，本文件仅作为镜像仓的参考配置保留。
+#
 # 用于自动构建和测试
 
 version: '1.0'

@@ -8,12 +8,16 @@ import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
 import com.minicat.minicatserver.dto.CreateTableDTO;
 import com.minicat.minicatserver.dto.ImportResult;
+import com.minicat.minicatserver.dto.RowUpdateRequest;
+import com.minicat.minicatserver.dto.RowUpdateResult;
+import com.minicat.minicatserver.dto.UiSettingsDTO;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.exception.ConnectionNotFoundException;
 import com.minicat.minicatserver.exception.DatabaseException;
 import com.minicat.minicatserver.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,6 +31,9 @@ public class DatabaseController {
 
     @Autowired
     private DatabaseService databaseService;
+
+    @Value("${minicat.ui.inline-edit-enabled:true}")
+    private boolean inlineEditEnabled;
 
     @GetMapping("/connections")
     public ApiResponseDTO<List<DatabaseConnection>> getAllConnections() {
@@ -172,5 +179,25 @@ public class DatabaseController {
                                              @RequestParam String table) {
         boolean success = databaseService.dropTable(id, database, table);
         return ApiResponseDTO.success(success);
+    }
+
+    /**
+     * 前端功能开关（当前仅内联编辑开关）。
+     */
+    @GetMapping("/settings")
+    public ApiResponseDTO<UiSettingsDTO> getUiSettings() {
+        return ApiResponseDTO.success(new UiSettingsDTO(inlineEditEnabled));
+    }
+
+    /**
+     * 单行/单元格更新：参数化 SQL + 可选乐观冲突检测。
+     */
+    @PutMapping("/connections/{id}/table-row")
+    public ApiResponseDTO<RowUpdateResult> updateRow(@PathVariable String id,
+                                                     @RequestParam String database,
+                                                     @RequestBody RowUpdateRequest request) {
+        log.debug("Received row update request: connectionId={}, database={}, table={}",
+                id, database, request == null ? null : request.getTable());
+        return ApiResponseDTO.success(databaseService.updateRow(id, database, request));
     }
 }

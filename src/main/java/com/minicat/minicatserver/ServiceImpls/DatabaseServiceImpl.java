@@ -3,13 +3,17 @@ package com.minicat.minicatserver.ServiceImpls;
 import com.minicat.minicatserver.Services.DatabaseService;
 import com.minicat.minicatserver.Utils.ConnectionPoolManager;
 import com.minicat.minicatserver.Utils.PasswordEncryptionService;
+import com.minicat.minicatserver.Utils.RowUpdateSqlBuilder;
 import com.minicat.minicatserver.Utils.SqlInjectionValidator;
+import com.minicat.minicatserver.Utils.SqlValueNormalizer;
 import com.minicat.minicatserver.dto.*;
 import com.minicat.minicatserver.entity.DatabaseConnection;
 import com.minicat.minicatserver.entity.DatabaseConnectionEntity;
 import com.minicat.minicatserver.exception.ConnectionNotFoundException;
 import com.minicat.minicatserver.exception.DatabaseException;
 import com.minicat.minicatserver.exception.QueryExecutionException;
+import com.minicat.minicatserver.exception.RowConflictException;
+import com.minicat.minicatserver.exception.RowNotFoundException;
 import com.minicat.minicatserver.exception.SqlInjectionException;
 import com.minicat.minicatserver.exception.ValidationException;
 import com.minicat.minicatserver.repository.DatabaseConnectionRepository;
@@ -350,34 +354,45 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         try (Connection c = createJdbcConnection(conn, databaseName)) {
             DatabaseMetaData metaData = c.getMetaData();
-            ResultSet rs = metaData.getColumns(databaseName, null, tableName, "%");
-
-            while (rs.next()) {
-                ColumnInfoDTO columnInfo = new ColumnInfoDTO();
-                columnInfo.setColumnName(rs.getString("COLUMN_NAME"));
-                columnInfo.setDataType(rs.getString("TYPE_NAME"));
-                columnInfo.setNullable(rs.getInt("NULLABLE") == DatabaseMetaData.columnNullable);
-                columnInfo.setDefaultValue(rs.getString("COLUMN_DEF"));
-                // JDBC 规范中 IS_AUTOINCREMENT 的取值是 "YES"/"NO"，这里归一化成布尔值给前端，
-                // 避免前端按 MySQL 方言的 "auto_increment" 字符串判断而失效。
-                String autoIncrement = rs.getString("IS_AUTOINCREMENT");
-                columnInfo.setExtra(autoIncrement);
-                columnInfo.setAutoIncrement("YES".equalsIgnoreCase(autoIncrement));
-                columnInfo.setColumnComment(rs.getString("REMARKS"));
-                columns.add(columnInfo);
+            try (ResultSet rs = metaData.getColumns(databaseName, null, tableName, "%")) {
+                while (rs.next()) {
+                    ColumnInfoDTO columnInfo = new ColumnInfoDTO();
+                    columnInfo.setColumnName(rs.getString("COLUMN_NAME"));
+                    columnInfo.setDataType(rs.getString("TYPE_NAME"));
+                    columnInfo.setNullable(rs.getInt("NULLABLE") == DatabaseMetaData.columnNullable);
+                    columnInfo.setDefaultValue(rs.getString("COLUMN_DEF"));
+                    // JDBC 规范中 IS_AUTOINCREMENT 的取值是 "YES"/"NO"，这里归一化成布尔值给前端，
+                    // 避免前端按 MySQL 方言的 "auto_increment" 字符串判断而失效。
+                    String autoIncrement = rs.getString("IS_AUTOINCREMENT");
+                    columnInfo.setExtra(autoIncrement);
+                    columnInfo.setAutoIncrement("YES".equalsIgnoreCase(autoIncrement));
+                    columnInfo.setRowIdentityPart(false);
+                    columnInfo.setColumnComment(rs.getString("REMARKS"));
+                    columns.add(columnInfo);
+                }
             }
 
-            // Get primary keys
-            ResultSet pkRs = metaData.getPrimaryKeys(databaseName, null, tableName);
+            // 主键列
             Set<String> primaryKeys = new HashSet<>();
-            while (pkRs.next()) {
-                primaryKeys.add(pkRs.getString("COLUMN_NAME"));
+            try (ResultSet pkRs = metaData.getPrimaryKeys(databaseName, null, tableName)) {
+                while (pkRs.next()) {
+                    primaryKeys.add(pkRs.getString("COLUMN_NAME"));
+                }
             }
 
-            // Mark primary keys
-            for (ColumnInfoDTO col : columns) {
-                if (primaryKeys.contains(col.getColumnName())) {
-                    col.setColumnKey("PRI");
+            // 行标识列：优先主键；无主键时使用第一个「UNIQUE 且所有列 NOT NULL」索引
+            Set<String> rowIdentityColumns = findRowIdentityColumns(metaData, databaseName, tableName, columns, primaryKeys);
+
+            for (ColumnInfoDTO column : columns) {
+                String columnName = column.getColumnName();
+                if (primaryKeys.contains(columnName)) {
+                    column.setColumnKey("PRI");
+                    column.setRowIdentityPart(true);
+                } else if (rowIdentityColumns.contains(columnName)) {
+                    column.setColumnKey("UNI");
+                    column.setRowIdentityPart(true);
+                } else {
+                    column.setRowIdentityPart(false);
                 }
             }
 
@@ -386,6 +401,53 @@ public class DatabaseServiceImpl implements DatabaseService {
         }
 
         return columns;
+    }
+
+    /**
+     * 计算可唯一定位数据行的列：
+     * 有主键 → 主键列；无主键 → 第一个「唯一索引且所有列 NOT NULL」的索引列（按索引列顺序）。
+     */
+    private Set<String> findRowIdentityColumns(DatabaseMetaData metaData,
+                                               String catalog,
+                                               String tableName,
+                                               List<ColumnInfoDTO> columns,
+                                               Set<String> primaryKeys) {
+        if (!primaryKeys.isEmpty()) {
+            return primaryKeys;
+        }
+
+        Map<String, Boolean> notNullByColumn = new HashMap<>();
+        for (ColumnInfoDTO column : columns) {
+            notNullByColumn.put(column.getColumnName(), Boolean.FALSE.equals(column.getNullable()));
+        }
+
+        Map<String, Map<Short, String>> uniqueIndexes = new LinkedHashMap<>();
+        try (ResultSet rs = metaData.getIndexInfo(catalog, null, tableName, true, true)) {
+            while (rs.next()) {
+                String indexName = rs.getString("INDEX_NAME");
+                String columnName = rs.getString("COLUMN_NAME");
+                if (indexName == null || columnName == null) {
+                    continue; // 统计信息行
+                }
+                if (rs.getBoolean("NON_UNIQUE")) {
+                    continue;
+                }
+                short ordinal = rs.getShort("ORDINAL_POSITION");
+                uniqueIndexes.computeIfAbsent(indexName, key -> new TreeMap<>()).put(ordinal, columnName);
+            }
+        } catch (SQLException e) {
+            log.warn("Failed to read unique indexes: table={}", tableName, e);
+            return Set.of();
+        }
+
+        for (Map<Short, String> indexColumns : uniqueIndexes.values()) {
+            List<String> names = new ArrayList<>(indexColumns.values());
+            boolean allNotNull = names.stream().allMatch(name -> Boolean.TRUE.equals(notNullByColumn.get(name)));
+            if (allNotNull) {
+                return new LinkedHashSet<>(names);
+            }
+        }
+        return Set.of();
     }
 
     @Override
@@ -475,6 +537,172 @@ public class DatabaseServiceImpl implements DatabaseService {
 
         } catch (SQLException e) {
             throw QueryExecutionException.fromSql(sql, e);
+        }
+    }
+
+    @Override
+    public RowUpdateResult updateRow(String connectionId, String databaseName, RowUpdateRequest request) {
+        DatabaseConnection conn = getConnectionById(connectionId);
+        if (conn == null) {
+            throw new ConnectionNotFoundException(connectionId);
+        }
+        if (request == null) {
+            throw new ValidationException("更新请求不能为空");
+        }
+        if (databaseName == null || databaseName.isBlank()) {
+            throw new ValidationException("数据库名不能为空");
+        }
+        if (!RowUpdateSqlBuilder.isIdentifier(request.getTable())) {
+            throw new ValidationException("表名不合法");
+        }
+        if (request.getChanges() == null || request.getChanges().isEmpty()) {
+            throw new ValidationException("没有需要修改的列");
+        }
+        if (request.getKeys() == null || request.getKeys().isEmpty()) {
+            throw new ValidationException("缺少行标识值");
+        }
+
+        // 列元数据（含行标识列判定），同时校验表是否存在
+        List<ColumnInfoDTO> columns = getColumns(connectionId, databaseName, request.getTable());
+        if (columns.isEmpty()) {
+            throw new ValidationException("表不存在或没有列定义");
+        }
+        Map<String, ColumnInfoDTO> columnMap = new LinkedHashMap<>();
+        for (ColumnInfoDTO column : columns) {
+            columnMap.put(column.getColumnName(), column);
+        }
+
+        List<String> identityColumns = new ArrayList<>();
+        for (ColumnInfoDTO column : columns) {
+            if (Boolean.TRUE.equals(column.getRowIdentityPart())) {
+                identityColumns.add(column.getColumnName());
+            }
+        }
+        if (identityColumns.isEmpty()) {
+            throw new ValidationException("该表没有主键或唯一非空索引，无法安全定位数据行");
+        }
+
+        List<String> changeColumns = new ArrayList<>(request.getChanges().keySet());
+        for (String columnName : changeColumns) {
+            ColumnInfoDTO column = columnMap.get(columnName);
+            if (column == null) {
+                throw new ValidationException("列不存在: " + columnName);
+            }
+            if (Boolean.TRUE.equals(column.getRowIdentityPart())) {
+                throw new ValidationException("行标识列不允许直接修改: " + columnName);
+            }
+            if (Boolean.TRUE.equals(column.getAutoIncrement())) {
+                throw new ValidationException("自增列不允许直接修改: " + columnName);
+            }
+            if (!SqlValueNormalizer.isEditableType(column.getDataType())) {
+                throw new ValidationException("该列类型不支持编辑: " + columnName + " (" + column.getDataType() + ")");
+            }
+        }
+
+        for (String identityColumn : identityColumns) {
+            if (!request.getKeys().containsKey(identityColumn)) {
+                throw new ValidationException("缺少行标识列: " + identityColumn);
+            }
+        }
+        for (String keyColumn : request.getKeys().keySet()) {
+            if (!identityColumns.contains(keyColumn)) {
+                throw new ValidationException("非法的行标识列: " + keyColumn);
+            }
+        }
+
+        Map<String, Object> expected = request.getExpected() == null ? Map.of() : request.getExpected();
+        List<String> expectedColumns = new ArrayList<>(expected.keySet());
+        for (String expectedColumn : expectedColumns) {
+            if (!request.getChanges().containsKey(expectedColumn)) {
+                throw new ValidationException("expected 只能是本次修改的列: " + expectedColumn);
+            }
+        }
+
+        String sql = RowUpdateSqlBuilder.buildUpdate(request.getTable(), changeColumns, identityColumns, expectedColumns);
+
+        try (Connection c = createJdbcConnection(conn, databaseName)) {
+            int affectedRows;
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                int index = 1;
+                for (String columnName : changeColumns) {
+                    index = bindValue(ps, index, columnMap.get(columnName), request.getChanges().get(columnName));
+                }
+                for (String identityColumn : identityColumns) {
+                    index = bindValue(ps, index, columnMap.get(identityColumn), request.getKeys().get(identityColumn));
+                }
+                for (String expectedColumn : expectedColumns) {
+                    index = bindValue(ps, index, columnMap.get(expectedColumn), expected.get(expectedColumn));
+                }
+                affectedRows = ps.executeUpdate();
+            }
+
+            if (affectedRows == 0) {
+                // 区分「行不存在」与「乐观冲突」：0 行且带 expected 时，行还在说明是被别人改过
+                boolean rowExists = existsByKeys(c, request.getTable(), identityColumns, request.getKeys(), columnMap);
+                if (rowExists && !expectedColumns.isEmpty()) {
+                    throw new RowConflictException("数据行已被修改，请刷新后重试");
+                }
+                throw new RowNotFoundException("数据行不存在或已被删除");
+            }
+
+            Map<String, Object> updatedRow = selectRowByKeys(c, request.getTable(), identityColumns, request.getKeys(), columnMap);
+            log.info("Row updated: connectionId={}, database={}, table={}, identity={}, changed={}, affectedRows={}",
+                    connectionId, databaseName, request.getTable(), identityColumns, changeColumns, affectedRows);
+
+            RowUpdateResult result = new RowUpdateResult();
+            result.setAffectedRows(affectedRows);
+            result.setRow(updatedRow);
+            return result;
+        } catch (SQLException e) {
+            throw QueryExecutionException.fromSql(sql, e);
+        }
+    }
+
+    private int bindValue(PreparedStatement ps, int index, ColumnInfoDTO column, Object value) throws SQLException {
+        Object normalized = SqlValueNormalizer.normalize(column == null ? null : column.getDataType(), value);
+        ps.setObject(index, normalized);
+        return index + 1;
+    }
+
+    private boolean existsByKeys(Connection connection,
+                                 String table,
+                                 List<String> identityColumns,
+                                 Map<String, Object> keys,
+                                 Map<String, ColumnInfoDTO> columnMap) throws SQLException {
+        String sql = RowUpdateSqlBuilder.buildExistsByKeys(table, identityColumns);
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            int index = 1;
+            for (String identityColumn : identityColumns) {
+                index = bindValue(ps, index, columnMap.get(identityColumn), keys.get(identityColumn));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private Map<String, Object> selectRowByKeys(Connection connection,
+                                                String table,
+                                                List<String> identityColumns,
+                                                Map<String, Object> keys,
+                                                Map<String, ColumnInfoDTO> columnMap) throws SQLException {
+        String sql = RowUpdateSqlBuilder.buildSelectByKeys(table, identityColumns);
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            int index = 1;
+            for (String identityColumn : identityColumns) {
+                index = bindValue(ps, index, columnMap.get(identityColumn), keys.get(identityColumn));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    throw new RowNotFoundException("数据行不存在或已被删除");
+                }
+                ResultSetMetaData metaData = rs.getMetaData();
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (int i = 1; i <= metaData.getColumnCount(); i++) {
+                    row.put(metaData.getColumnLabel(i), rs.getObject(i));
+                }
+                return row;
+            }
         }
     }
 

@@ -12,9 +12,11 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
     CONNECTION_NOT_FOUND(40401, HttpStatus.NOT_FOUND, "连接不存在"),
+    ROW_NOT_FOUND(40402, HttpStatus.NOT_FOUND, "数据行不存在或已被删除"),
     VALIDATION_FAILED(40001, HttpStatus.BAD_REQUEST, "参数校验失败"),
     SQL_BLOCKED(40301, HttpStatus.FORBIDDEN, "SQL 被安全策略拦截"),
     CONFLICT(40901, HttpStatus.CONFLICT, "数据已被其他操作修改，请刷新后重试"),
+    ROW_CONFLICT(40902, HttpStatus.CONFLICT, "数据行已被修改，请刷新后重试"),
     SQL_EXECUTION_FAILED(50001, HttpStatus.INTERNAL_SERVER_ERROR, "SQL 执行失败"),
     CONNECTION_FAILED(50002, HttpStatus.INTERNAL_SERVER_ERROR, "数据库连接失败"),
     INTERNAL(50000, HttpStatus.INTERNAL_SERVER_ERROR, "内部错误");

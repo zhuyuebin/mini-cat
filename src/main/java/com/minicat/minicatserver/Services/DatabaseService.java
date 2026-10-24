@@ -1,6 +1,8 @@
 package com.minicat.minicatserver.Services;
 
 import com.minicat.minicatserver.dto.QueryResultDTO;
+import com.minicat.minicatserver.dto.RowUpdateRequest;
+import com.minicat.minicatserver.dto.RowUpdateResult;
 import com.minicat.minicatserver.dto.TableDataPageDTO;
 import com.minicat.minicatserver.dto.TableInfoDTO;
 import com.minicat.minicatserver.dto.ColumnInfoDTO;
@@ -35,6 +37,11 @@ public interface DatabaseService {
      * 表数据分页读取。
      */
     TableDataPageDTO getTableDataPage(String connectionId, String databaseName, String tableName, int page, int size);
+
+    /**
+     * 单行（单元格）更新：参数化 SQL + 可选乐观冲突检测（expected 旧值）。
+     */
+    RowUpdateResult updateRow(String connectionId, String databaseName, RowUpdateRequest request);
 
     QueryResultDTO executeQuery(String connectionId, String databaseName, String sql);
 

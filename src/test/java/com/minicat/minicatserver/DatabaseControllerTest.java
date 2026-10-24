@@ -159,6 +159,44 @@ class DatabaseControllerTest {
                 .andExpect(jsonPath("$.code").value(40001));
     }
 
+    @Test
+    void uiSettingsExposeInlineEditFlag() throws Exception {
+        mockMvc.perform(get("/api/database/settings"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.inlineEditEnabled").value(true));
+    }
+
+    @Test
+    void updateRowValidatesConnectionAndIdentifiers() throws Exception {
+        String rowBody = "{\"table\":\"users\",\"keys\":{\"id\":1},\"changes\":{\"name\":\"a\"}}";
+
+        mockMvc.perform(put("/api/database/connections/not-exists/table-row")
+                        .param("database", "demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(rowBody))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40401));
+
+        String id = createConnection("it-row-update");
+
+        // 非法表名必须在触达数据库之前被拒绝（标识符白名单）
+        mockMvc.perform(put("/api/database/connections/{id}/table-row", id)
+                        .param("database", "demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"table\":\"users; DROP TABLE x\",\"keys\":{\"id\":1},\"changes\":{\"name\":\"a\"}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001));
+
+        // 空 changes 直接 400，不依赖目标数据库
+        mockMvc.perform(put("/api/database/connections/{id}/table-row", id)
+                        .param("database", "demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"table\":\"users\",\"keys\":{\"id\":1},\"changes\":{}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40001));
+    }
+
     private String createConnection(String name) throws Exception {
         MvcResult created = mockMvc.perform(post("/api/database/connections")
                         .contentType(MediaType.APPLICATION_JSON)

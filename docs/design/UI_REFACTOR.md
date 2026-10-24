@@ -1,7 +1,8 @@
-# MiniCat 前端信息架构重构方案（P0，开发契约）
+# MiniCat 前端信息架构重构方案（P0 / P1-1 设计记录）
 
-> 状态：待开发 · 目标分支：`feat/ui-refactor`（基于 `feat/m1-correctness`）
-> 本文是把「用户意图 → 产品结构」对齐后的定稿方案，实现与验收以本文为准。
+> 状态：**已实现**（P0-1 ~ P0-3 + P1-1，2026-10）
+> 归档说明：本文是当时的开发契约与实现记录，保留用于追溯设计决策；当前使用文档见 [../USER_GUIDE.md](../USER_GUIDE.md)，
+> 架构说明见 [../ARCHITECTURE.md](../ARCHITECTURE.md)。
 
 ---
 

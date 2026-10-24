@@ -1,15 +1,18 @@
-# 🐱 MiniCat - 轻量级 Web 数据库管理工具
+# 🐱 MiniCat — 轻量级 Web 数据库管理工具
 
 <div align="center">
 
-![MiniCat](MiniCat-Frontend/public/logo.png)
+<img src="MiniCat-Frontend/public/logo.png" alt="MiniCat" width="120" />
 
-**一个现代、轻量的 Web 数据库管理工具 — 就像在浏览器中使用 Navicat。**
+**一个现代、轻量的 Web 数据库管理工具 —— 像用 Navicat 一样在浏览器里管理数据库。**
 
 [![Java](https://img.shields.io/badge/Java-17-orange.svg)](https://adoptium.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Vue](https://img.shields.io/badge/Vue-3.5-42b883.svg)](https://vuejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+GitHub（主仓库）：<https://github.com/zhuyuebin/mini-cat> ·
+Gitee（国内备份）：<https://gitee.com/zhuyuebin/mini-cat>
 
 </div>
 
@@ -17,161 +20,222 @@
 
 ## 📖 项目简介
 
-MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器界面管理 MySQL 和 PostgreSQL 数据库。连接多个数据库、执行 SQL 查询、浏览数据表、导入数据、监控连接池 — 无需安装桌面客户端，打开浏览器即可使用。
+MiniCat 是**单文件即可运行的 Web 数据库管理工具**：一个约 80MB 的 JAR 内置前端，启动后浏览器打开
+`http://localhost:8888/#/workspace` 就能连接、浏览、编辑、查询你的 MySQL 数据库（PostgreSQL 实验性支持）。
+
+- 面向**个人开发者/本机使用**：无需安装桌面客户端、无需额外数据库；
+- 连接配置保存在本地 H2 文件库（`./data/`），密码 AES-256-GCM 加密；
+- 前后端分离开发，但打包成单个可执行 JAR 发布。
 
 > [!WARNING]
-> **本项目定位为「本机单用户工具」**：默认只监听 `127.0.0.1`，且没有登录认证。请勿直接部署到公网或不受信任的网络；远程访问请叠加反向代理 + HTTPS + Basic Auth / VPN。安全模型与已知限制见 [SECURITY.md](SECURITY.md)。
+> **本项目定位为「本机单用户工具」**：默认只监听 `127.0.0.1`，且没有登录认证。
+> 请勿直接部署到公网或不受信任的网络；确需远程访问请叠加反向代理 + HTTPS + Basic Auth / VPN。
+> 完整安全模型见 [SECURITY.md](SECURITY.md)。
 
 ---
 
 ## ✨ 功能特性
 
-### 🔌 多数据库支持
-- **MySQL** 5.7+ / 8.0+（完整支持：连接、库表浏览、查询、建表、导入）
-- **PostgreSQL** 12+（**实验性**：当前仅"测试连接"可用，库表浏览/建表等仍按 MySQL 方言实现，见「已知限制」）
-- 同时管理多个数据库连接
+### 🗄️ 数据库支持
 
-### 🖥️ 现代化 Web 界面
-- **Vue 3** + **Element Plus** 构建的清爽界面
-- 左侧资源树（连接 → 数据库 → 表）+ 多 Tab 工作区 + 底部状态栏
-- 同时打开多张表 / 多个 SQL 查询，切换不丢上下文、页码与 SQL 草稿（`Alt+T` 新建查询、`Alt+W` 关闭 Tab）
-- 实时连接状态显示（成功 / 失败 / 未测试）
+- **MySQL 5.7+ / 8.0+**：完整支持连接、库表浏览、数据分页、单元格编辑、SQL 查询、建表/删表、CSV/Excel 导入；
+- **PostgreSQL 12+**：实验性，当前仅支持连接测试（浏览/编辑能力见 [路线图](docs/ROADMAP.md)）；
+- 多连接并行管理，连接类型能力矩阵区分可浏览/可查询能力。
+
+### 🖥️ 资源树 + 多 Tab 工作区
+
+- 左侧**资源树**：连接 → 数据库 → 数据表，懒加载、可刷新，单击表打开工作区、双击直接看数据；
+- 右侧**多 Tab**：同时打开多张表 / 多个 SQL 查询，切换不丢上下文、页码与 SQL 草稿；
+- 底部状态栏显示当前连接、类型、连通状态与路径；
+- 工作区状态自动持久化（Tab / 激活 Tab / 展开节点 / 上次选择 / 每页条数 / SQL 草稿）；
+- 快捷键：`Alt+T` 新建查询、`Alt+W` 关闭 Tab、`Ctrl+Enter` 执行 SQL。
+
+### 📊 表工作区
+
+- **数据**：服务端分页（每页 20/50/100/200，固定底部页码）、全局行号、刷新、新增行、行内删除；
+- **双击单元格内联编辑**：文本/数字/日期/布尔按类型渲染编辑器，Enter/失焦保存、Esc 取消；
+- 行定位优先主键，无主键时回退 `UNIQUE NOT NULL` 唯一索引，都没有则只读提示；
+- 保存走服务端**参数化 UPDATE + 旧值 CAS**，别人/别的 Tab 改过会提示 409 并自动刷新，不静默覆盖；
+- **结构**：列名/类型/可空/PK/UK/默认值/自增/注释；**信息**：连接/库/表/列数/行数；
+- 低频/危险操作收进「更多 ▾」：新建表、导入数据、自定义 SQL、删除表。
 
 ### 🛠️ SQL 工作台
-- 等宽字体 SQL 编辑器
-- 基于 `sql-formatter` 的 **一键 SQL 格式化**
-- 支持执行 **SELECT 查询** 和 **INSERT / UPDATE / DELETE** 语句
-- 危险操作（DELETE / DROP / TRUNCATE）二次确认弹窗
-- 查询结果表格展示，含执行耗时
-- 数据表分页浏览（每页条数可选 20/50/100/200）
 
-### 📊 数据表管理
-- 浏览所有表及行数统计
-- 查看表结构（列名、类型、是否可空、主键/唯一非空索引、默认值、注释）
-- 可视化表单 **创建表**，支持多列定义
-- **删除表** 确认操作
-- 点击表名快速生成 `SELECT * FROM <table> LIMIT 100`
+- 等宽字体编辑器、`sql-formatter` 一键格式化；
+- `SELECT` 走查询接口，`INSERT/UPDATE/DELETE/DROP TABLE` 走更新接口；
+- 危险语句二次确认；查询结果表格 + 行数/耗时；SQL 草稿随 Tab 保留。
 
-### ✏️ 表格内联编辑
-- **双击单元格**直接修改数据，Enter / 失焦保存，Esc 取消（未修改自动退出）
-- 按列类型提供编辑器：文本 / 数字 / 日期 / 日期时间 / 布尔
-- 行定位优先主键；无主键时回退到 `UNIQUE NOT NULL` 唯一索引；两者都没有则整表只读并提示
-- 保存走服务端**参数化 UPDATE**，并带被修改列旧值做乐观冲突检测（409 提示 + 自动刷新，不静默覆盖）
-- 行标识列、自增列、BLOB / JSON / 空间类型不可编辑；必填列清空会被拦截
-- 可用 `minicat.ui.inline-edit-enabled=false` 关闭内联编辑，降级为只读
+### ⚙️ 设置与连接管理
 
-### 📥 数据导入
-- 支持 **CSV**（`.csv`）和 **Excel**（`.xlsx` / `.xls`）文件导入
-- 自动表头与数据库列匹配校验
-- 批量插入 + 事务回滚保护
-- 详细的导入结果报告（总计 / 成功 / 失败行数）
+- 连接管理从一级导航迁入「设置」：新增/编辑/测试/删除连接，支持 MySQL / PostgreSQL；
+- 欢迎/帮助页提供四步上手引导与最近连接入口；
+- 一键清空本地工作区状态（不影响数据库连接）。
 
-### 🔒 安全防护
-- 连接密码 **AES-256-GCM 加密存储**，密钥支持环境变量或本地密钥文件
-- **SQL 注入检测**：拦截常见注入特征（危险操作提醒，不是安全边界，可能误伤合法 SQL）
-- 针对 SELECT / INSERT / UPDATE / DELETE / DROP TABLE 分别校验
-- API 响应中 **绝不返回密码明文**
-- UPDATE / DELETE 强制包含 WHERE 条件
-- **默认只监听 `127.0.0.1`**，避免无意中暴露到局域网
+### 🔒 安全与性能
 
-### ⚡ 性能优化
-- 每个「连接配置 + 目标数据库」独立一个 **HikariCP 连接池**，单池上限 **5**、最小空闲 1（避免多库时连接数爆炸）
-- MySQL 专项优化（预编译语句缓存、批量改写、utf8mb4 字符集）
-- PostgreSQL 专项优化（prepare threshold 调优）
-- 连接池状态接口（`/pool-status`；前端监控面板规划中）
-- 表数据服务端分页（`COUNT(*)` + `LIMIT/OFFSET`，不再由前端拼 SQL）
+- 连接密码 **AES-256-GCM 加密存储**，密钥支持环境变量或本地密钥文件；
+- SQL 黑名单式危险操作提醒 + `WHERE` 强制校验（**注意：不是安全边界**）；
+- 单元格编辑全参数化、标识符白名单、行标识列/自增列/BLOB/JSON 禁止修改；
+- 每个「连接 + 数据库」独立 HikariCP 池（单池上限 5、最小空闲 1），修改/删除连接自动回收；
+- 默认只监听 `127.0.0.1`，同源访问、无通配 CORS。
 
-### 🚀 部署就绪
-- **GitHub Actions** CI：后端测试（H2 内存库）/ 前端构建 / 打包三个独立 job
-- **Linux/macOS**（`start.sh`）和 **Windows**（`start_win.bat`）一键启动脚本
-- 生产环境配置（`application-prod.properties`）：Gzip 压缩、日志文件输出、连接池参数
+---
+
+## 🖥️ 界面一览
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│ 🐱 MiniCat   轻量级数据库管理工具                        设置 帮助 │
+├──────────────────┬────────────────────────────────────────────────┤
+│ 资源             │  user ×  +                                     │
+│ ▼ MySQL test1    ├────────────────────────────────────────────────┤
+│   information_.. │ test1 › usertest › user   MySQL  3列 · 100行     │
+│   mysql          │ ┌ 数据 ┬ 结构 ┬ 信息 ┐                 刷新 更多▾│
+│   usertest       │ │ 共100条 · 第1/5页              + 新增行     │ │
+│     ▸ user       │ │ # id username beizhu              操作     │ │
+│   world          │ │ 1 1  zhangsan1 无                 删除     │ │
+│                  │ │ 2 2  zhangsan2 无                 删除     │ │
+│                  │ │ …                                           │ │
+├──────────────────┤ │ 共100条  20条/页  ◀ 1 2 3 4 5 ▶  前往 1 页 │ │
+│ test1 MySQL 连接正常 usertest / user          数据保存在 data/ 下 │
+└──────────────────┴────────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 快速开始
+
+### 前置要求
+
+- **JDK 17+**（必须；`java -version` 可验证）
+- 运行：无需 Node/Maven（已打包进 JAR）
+- 从源码构建：Maven 3.6+（或使用仓库自带 `mvnw`），首次构建会由插件下载 Node 20
+- 浏览器：Chrome / Edge / Firefox / Safari 现代版本
+
+### 方式一：一键脚本（推荐给本机使用）
+
+```bash
+# Linux / macOS
+git clone https://github.com/zhuyuebin/mini-cat.git
+cd mini-cat
+chmod +x start.sh
+./start.sh          # 构建 + 启动，访问 http://localhost:8888
+```
+
+```cmd
+:: Windows（双击 start_win.bat 或命令行执行）
+git clone https://github.com/zhuyuebin/mini-cat.git
+cd mini-cat
+start_win.bat
+```
+
+> 首次构建需要下载依赖和 Node，耗时较长；之后可直接 `java -jar target\minicat-server-*.jar` 秒启。
+
+### 方式二：手动构建运行（JAR）
+
+```bash
+git clone https://github.com/zhuyuebin/mini-cat.git
+cd mini-cat
+./mvnw clean package -DskipTests
+java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
+```
+
+**启动成功标志**：控制台出现 `Tomcat started on port 8888` 与 `Started MiniCatApplication`。
+浏览器打开 **<http://localhost:8888/#/workspace>**（Hash 路由，`/tables` 等旧地址会自动跳转）。
+
+### 方式三：Docker
+
+```bash
+git clone https://github.com/zhuyuebin/mini-cat.git
+cd mini-cat
+docker compose up -d
+# 访问 http://localhost:8888
+```
+
+### 方式四：开发模式（前后端分离热更新）
+
+```bash
+# 终端 1：后端
+./mvnw spring-boot:run
+
+# 终端 2：前端
+cd MiniCat-Frontend
+npm install --registry=https://registry.npmmirror.com
+npm run dev        # http://localhost:5173，/api 自动代理到 8888
+```
+
+### 首次使用（4 步）
+
+1. 右上角 **设置** → 新建连接（MySQL）：填名称、主机、端口、用户名、密码 → 保存；
+2. 回到 **工作区**，左侧资源树展开连接 → 数据库 → 数据表（单击打开 Tab，双击直达数据）；
+3. 在「数据」页翻页浏览；**双击单元格**可直接修改，Enter 保存、Esc 取消；
+4. 按 `Alt+T` 打开 SQL 查询 Tab，写 SQL 后 `Ctrl+Enter` 执行。
+
+更细的说明见 [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) 与 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
+
+---
+
+## 💾 数据与持久化
+
+- 连接配置、加密密钥都在**启动目录**下的 `data/`（`minicat_db.mv.db` + `secret.key`）；
+- 同目录重启 → 配置保留；换目录启动 → 会创建新的空 `data/`（看起来像“连接丢了”）；
+- **备份 `data/` = 备份全部连接配置与密钥**；删除 `data/` 等于清空连接；
+- `data/` 已在 `.gitignore` 中忽略，请勿提交；`MINICAT_SECRET_KEY` 环境变量可替代密钥文件。
+
+详见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
+
+---
+
+## ⚙️ 常用配置
+
+```properties
+server.port=8888                              # HTTP 端口
+server.address=127.0.0.1                      # 默认只监听本机
+minicat.security.key-file=./data/secret.key   # 密码加密密钥文件
+minicat.ui.inline-edit-enabled=true           # 单元格内联编辑开关（false=只读）
+spring.servlet.multipart.max-file-size=50MB   # CSV/Excel 导入大小上限
+```
+
+完整配置/环境变量见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
+
+---
+
+## 🔌 API 一览
+
+基础路径 `http://localhost:8888/api/database`，统一响应 `{code, message, data, success}`，
+共 **19 个接口**：连接管理（6）、元数据（3）、表数据分页与行编辑（2）、SQL 执行（2）、
+表操作（3）、监控（2）、前端设置（1）。完整参数与示例见 **[docs/API.md](docs/API.md)**。
+
+---
+
+## 🧪 测试与 CI
+
+```bash
+# 后端测试（H2 内存库隔离，不污染 ./data）
+./mvnw test
+
+# 只跑后端测试、跳过前端构建
+./mvnw -Dskip.installnodenpm -Dskip.npm test
+```
+
+- 当前 **51 个后端用例**：纯单测（SQL 校验、加密、连接池、行更新 SQL 构建、值归一化）、
+  H2 集成、MockMvc 契约测试；
+- GitHub Actions 三个 job：`backend-test`（真跑测试）、`frontend-build`、`package`（产出 JAR 工件）。
+
+详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ---
 
 ## 🏗️ 技术栈
 
 | 层级 | 技术 |
-|------|------|
-| **后端框架** | Spring Boot 3.5.14、Java 17 |
-| **安全** | Spring Security |
-| **元数据存储** | Spring Data JPA + H2（文件数据库） |
-| **连接池** | HikariCP |
-| **前端框架** | Vue 3.5（Composition API）、Vite 8 |
-| **UI 组件库** | Element Plus 2.13 |
-| **状态管理** | Pinia 3 |
-| **路由** | Vue Router 5 |
-| **HTTP 客户端** | Axios |
-| **SQL 格式化** | sql-formatter |
-| **Excel 解析** | Apache POI 5.2 |
-| **CSV 解析** | OpenCSV 5.7 |
-| **测试** | JUnit 5 + MockMvc + H2 内存库（完全隔离） |
-| **构建工具** | Maven + Frontend Maven Plugin |
-
----
-
-## 🚀 快速开始
-
-### 环境要求
-- **JDK 17** 或更高版本
-- **Maven 3.6+**（项目已包含 Maven Wrapper，无需单独安装）
-
-### 方式一：一键启动脚本
-
-**Linux / macOS：**
-```bash
-git clone git@github.com:zhuyuebin/mini-cat.git
-cd mini-cat
-chmod +x start.sh
-./start.sh
-```
-
-**Windows：**
-```cmd
-git clone git@github.com:zhuyuebin/mini-cat.git
-cd mini-cat
-start_win.bat
-```
-
-### 方式二：手动构建运行
-
-```bash
-git clone git@github.com:zhuyuebin/mini-cat.git
-cd mini-cat
-
-# 构建（前后端一起打包）
-./mvnw clean package -DskipTests
-
-# 运行
-java -jar target/minicat-server-0.0.1-SNAPSHOT.jar
-```
-
-### 方式三：开发模式（前端热更新）
-
-```bash
-# 终端 1：启动后端
-./mvnw spring-boot:run
-
-# 终端 2：启动前端开发服务器
-cd MiniCat-Frontend
-npm install --registry=https://registry.npmmirror.com
-npm run dev
-```
-
-前端开发服务器：**http://localhost:5173** → 自动代理 API 到后端 **http://localhost:8888**
-
-### 访问应用
-
-浏览器打开：**[http://localhost:8888/#/workspace](http://localhost:8888/#/workspace)**
-
-> P0 前端重构后使用 Hash 路由（后端静态资源没有 SPA fallback，Hash 可避免刷新 404）：`/#/workspace` 工作区、`/#/settings` 设置、`/#/welcome` 帮助。
-
-**界面导航（P0 重构后）**
-
-- **左侧资源树**：连接 → 数据库 → 数据表；单击表打开工作区、双击直接进入「数据」；
-- **多 Tab 工作区**：可同时打开多张表 / 多个 SQL 查询，切换 Tab 不丢上下文与页码；
-- **设置**（右上角）：连接管理从一级导航迁入，支持新增/编辑/测试/删除连接；
-- **快捷键**：`Alt+T` 新建查询、`Alt+W` 关闭当前 Tab、`Ctrl+Enter` 执行 SQL；
-- 自动记住上次打开的 Tab、连接/库/表、展开节点与每页条数（SQL 草稿也会保留）。
+|---|---|
+| 后端 | Spring Boot 3.5.14、Java 17、Spring Data JPA、HikariCP |
+| 元数据 | H2 文件数据库（连接配置） |
+| 目标库 | MySQL（完整）、PostgreSQL（实验性） |
+| 前端 | Vue 3.5、Vite 8、Element Plus 2.13、Pinia 3、Vue Router 5（Hash）、Axios、sql-formatter |
+| 安全 | AES-256-GCM、参数化 SQL、标识符白名单、默认回环监听 |
+| 构建/部署 | Maven Wrapper + frontend-maven-plugin、Docker 多阶段构建、GitHub Actions |
 
 ---
 
@@ -179,290 +243,69 @@ npm run dev
 
 ```
 mini-cat/
-├── src/main/java/com/minicat/minicatserver/
-│   ├── MiniCatApplication.java              # 应用入口
-│   ├── config/
-│   │   ├── H2ConfigConfiguration.java       # H2 元数据库配置
-│   │   ├── HikariConfigProperties.java      # 连接池参数配置
-│   │   └── SecurityConfig.java              # Spring Security（禁用 CSRF，开放所有请求）
-│   ├── controller/
-│   │   └── DatabaseController.java          # REST API 控制器（17 个接口）
-│   ├── Services/
-│   │   └── DatabaseService.java             # 服务层接口
-│   ├── ServiceImpls/
-│   │   └── DatabaseServiceImpl.java         # 核心业务逻辑
-│   ├── dto/
-│   │   ├── ApiResponseDTO.java              # 统一 API 响应封装
-│   │   ├── ColumnInfoDTO.java               # 列元数据
-│   │   ├── CreateTableDTO.java              # 建表请求
-│   │   ├── ImportResult.java                # 导入结果
-│   │   ├── QueryResultDTO.java              # 查询结果
-│   │   ├── TableDataPageDTO.java            # 表数据分页结果
-│   │   └── TableInfoDTO.java                # 表元数据
-│   ├── entity/
-│   │   ├── DatabaseConnection.java          # 连接 DTO（返回前端）
-│   │   └── DatabaseConnectionEntity.java    # JPA 实体（存储于 H2）
-│   ├── exception/
-│   │   ├── ErrorCode.java                   # 业务错误码（4xxxx/5xxxx + HTTP 状态）
-│   │   ├── GlobalExceptionHandler.java      # 全局异常处理器（按 ErrorCode 统一映射）
-│   │   └── ...                              # 自定义异常类
-│   ├── repository/
-│   │   └── DatabaseConnectionRepository.java
-│   └── Utils/
-│       ├── ConnectionPoolManager.java       # 连接池生命周期（按 connectionId + 并发保护）
-│       ├── PasswordEncryptionService.java   # AES 密码加解密
-│       └── SqlInjectionValidator.java       # SQL 注入检测（4 种验证模式）
-├── src/test/java/                            # 测试：纯单测 + H2 集成 + MockMvc 契约
-├── MiniCat-Frontend/
-│   ├── src/
-│   │   ├── api/database.js                  # Axios API 客户端
-│   │   ├── layout/
-│   │   │   ├── AppShell.vue                 # 应用外壳（顶栏 + 资源树 + Tab 工作区 + 状态栏）
-│   │   │   ├── TopBar.vue                   # 顶栏（设置 / 帮助）
-│   │   │   ├── DataExplorer.vue             # 资源树：连接 → 数据库 → 数据表（懒加载）
-│   │   │   └── WorkspaceTabs.vue            # 多 Tab 栏
-│   │   ├── router/index.js                  # Hash 路由：/workspace、/settings、/welcome（旧路由重定向）
-│   │   ├── stores/workspace.js              # Pinia：连接/库/表缓存、多 Tab、工作区状态持久化
-│   │   ├── utils/capabilities.js            # 连接类型能力矩阵（MySQL / PostgreSQL）
-│   │   ├── views/
-│   │   │   ├── WorkspaceView.vue            # Tab 工作区容器
-│   │   │   ├── WelcomeView.vue              # 欢迎 / 帮助 / 无连接引导
-│   │   │   ├── SettingsView.vue             # 设置（连接管理）
-│   │   │   └── workspace/
-│   │   │       ├── TableWorkspace.vue       # 表工作区（上下文栏 + 数据/结构/信息 + 更多 ▾）
-│   │   │       ├── TableDataTab.vue         # 表数据（固定分页、全局行号、增删行）
-│   │   │       ├── TableStructureTab.vue    # 表结构
-│   │   │       ├── TableInfoTab.vue         # 表信息
-│   │   │       ├── QueryWorkspace.vue       # SQL 查询工作区
-│   │   │       └── QueryResultPanel.vue     # 查询结果面板
-│   │   └── components/
-│   │       ├── ConnectionDialog.vue         # 连接新增 / 编辑
-│   │       ├── CreateTableDialog.vue        # 新建表
-│   │       ├── ImportDataDialog.vue         # CSV/Excel 导入
-│   │       └── CustomSqlDialog.vue          # 自定义 SQL
-│   ├── package.json
-│   └── index.html
-├── docs/UI_REFACTOR.md                        # P0 前端信息架构重构契约（线框/状态模型/验收）
-├── MD-Files/
-│   ├── CHANGELOG.md                          # 更新日志
-│   ├── CONTRIBUTING.md                       # 贡献指南
-│   ├── CRUD_FEATURES.md                      # CRUD 功能说明
-│   ├── SECURITY_ENHANCEMENTS.md              # 安全增强说明
-│   └── USAGE.md                              # 使用指南
-├── .github/workflows/build.yml               # CI：push/PR 自动构建
-├── .dockerignore                              # Docker 构建上下文忽略规则
-├── SECURITY.md                                # 安全模型、威胁边界与已知限制
-├── pom.xml                                    # Maven 配置（含前端构建插件）
-├── start.sh                                   # Linux/macOS 启动脚本
-├── start_win.bat                              # Windows 启动脚本
-├── restart.sh                                 # 重启脚本
-└── LICENSE                                    # MIT 许可证
+├── src/main/java/...        # Spring Boot 后端（Controller/Service/Utils/异常体系）
+├── src/test/java/...        # 51 个后端测试
+├── MiniCat-Frontend/        # Vue 3 前端源码
+├── docs/                    # 用户/开发/架构/API 文档
+├── .github/workflows/       # GitHub Actions CI
+├── Dockerfile / docker-compose.yml
+├── pom.xml / mvnw / start.sh / start_win.bat / restart.sh
+└── data/                    # 运行时生成（已忽略）
 ```
 
----
-
-## 🔌 API 接口文档
-
-基础路径：`/api/database`
-
-### 连接管理
-| 方法 | 接口 | 说明 |
-|------|------|------|
-| `GET` | `/connections` | 获取所有连接（密码字段已移除） |
-| `GET` | `/connections/{id}` | 获取单个连接详情 |
-| `POST` | `/connections` | 新增连接 |
-| `PUT` | `/connections/{id}` | 更新连接 |
-| `DELETE` | `/connections/{id}` | 删除连接（同时关闭连接池） |
-| `POST` | `/connections/{id}/test` | 测试连接 |
-
-### 数据库浏览
-| 方法 | 接口 | 说明 |
-|------|------|------|
-| `GET` | `/connections/{id}/databases` | 列出所有数据库 |
-| `GET` | `/connections/{id}/tables?database={db}` | 列出所有表及行数 |
-| `GET` | `/connections/{id}/columns?database={db}&table={tbl}` | 获取列定义 |
-
-### SQL 执行
-| 方法 | 接口 | 说明 |
-|------|------|------|
-| `POST` | `/connections/{id}/query?database={db}` | 执行 SELECT 查询（Body 为原始 SQL） |
-| `POST` | `/connections/{id}/update?database={db}` | 执行 INSERT/UPDATE/DELETE/DROP |
-
-### 数据表操作
-| 方法 | 接口 | 说明 |
-|------|------|------|
-| `POST` | `/connections/{id}/create-table?database={db}` | 创建数据表 |
-| `DELETE` | `/connections/{id}/tables?database={db}&table={tbl}` | 删除数据表 |
-| `GET` | `/connections/{id}/table-data?database={db}&table={tbl}&page=1&size=50` | 表数据服务端分页（返回 rows + total） |
-| `PUT` | `/connections/{id}/table-row?database={db}` | 单行/单元格更新（参数化 UPDATE + 可选 expected 旧值乐观 CAS） |
-| `GET` | `/settings` | 前端功能开关（当前含内联编辑开关） |
-
-### 数据导入
-| 方法 | 接口 | 说明 |
-|------|------|------|
-| `POST` | `/connections/{id}/import-data?database={db}&table={tbl}` | 导入 CSV/Excel 文件 |
-
-### 监控
-| 方法 | 接口 | 说明 |
-|------|------|------|
-| `GET` | `/connections/{id}/info?database={db}` | 数据库产品名、版本、驱动信息 |
-| `GET` | `/connections/{id}/pool-status?database={db}` | HikariCP 连接池状态 |
+完整目录与模块说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ---
 
-## ⚙️ 配置说明
+## 📚 文档导航
 
-### 应用配置
-
-`src/main/resources/application.properties` 主要配置项：
-
-```properties
-server.port=8888                              # HTTP 端口
-server.address=127.0.0.1                      # 默认只监听本机
-spring.servlet.multipart.max-file-size=50MB   # CSV/Excel 导入大小上限
-minicat.security.key-file=./data/secret.key   # 连接密码加密密钥文件
-minicat.ui.inline-edit-enabled=true           # 单元格内联编辑开关（共享环境可设 false 只读）
-spring.datasource.hikari.maximum-pool-size=5  # 每个目标库连接池上限
-spring.application.name=MiniCat
-logging.level.com.minicat=DEBUG               # 包级别调试日志
-```
-
-容器部署时由 `docker-compose.yml` 注入 `SERVER_ADDRESS=0.0.0.0`（容器内监听所有网卡，对外暴露仍受 `ports` 限制）。
-
-### 生产环境
-
-```bash
-java -jar minicat-server.jar --spring.profiles.active=prod
-```
-
-生产环境配置（`application-prod.properties`）：
-- **Gzip** 压缩：text/html/json/css/js
-- **WARN** 级别日志，输出到 `logs/minicat.log`
-- **DevTools** 禁用
-- **H2 控制台** 禁用
-- **连接池**：单池最大 5、最小空闲 1（`spring.datasource.hikari.*`）
-- **JPA**：`ddl-auto=update`，SQL 日志关闭
-
-### 元数据与密钥
-
-- **元数据库**：H2 文件数据库 `./data/minicat_db`，首次运行自动创建；
-- **加密密钥**：`./data/secret.key`，首次运行自动生成；也可用环境变量 `MINICAT_SECRET_KEY` 提供（容器部署推荐）；
-- **备份 `data/` 目录 = 保留全部连接配置与密钥**；换机器/重建容器时请一并保留，否则历史密码无法解密；
-- `data/` 已在 `.gitignore` 中忽略，请勿提交。
+| 文档 | 内容 |
+|---|---|
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | 安装、启动、首次使用、常见问题 |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | 界面与功能使用（多 Tab、表工作区、内联编辑、SQL、导入） |
+| [docs/API.md](docs/API.md) | REST API 全量参考 + 错误码 + curl 示例 |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | 配置项、环境变量、数据目录与持久化 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构、模块、连接池、行更新与状态设计 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | JAR / Docker / 反向代理部署 |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 本地开发、测试分层、CI、调试 |
+| [docs/RELEASING.md](docs/RELEASING.md) | 版本发布与 GitHub/Gitee 双远程同步 |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | 已完成里程碑、下一步规划、已知限制 |
+| [docs/design/UI_REFACTOR.md](docs/design/UI_REFACTOR.md) | 前端信息架构设计记录（P0/P1） |
+| [SECURITY.md](SECURITY.md) | 安全模型、威胁边界、部署加固清单 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
 
 ---
 
-## 🔐 安全机制
+## 🗺️ 路线图（摘要）
 
-| 措施 | 实现方式 |
-|------|----------|
-| **密码加密** | `PasswordEncryptionService` 使用 AES-256-GCM，密文格式 `v2:Base64(IV+密文)`；密钥来自 `MINICAT_SECRET_KEY` 或 `./data/secret.key`（首次启动生成）。旧版本固定种子的历史密文仍可解密，并在下次保存时升级。 |
-| **SQL 注入防护** | `SqlInjectionValidator` 拦截常见注入特征：UNION 注入、时间盲注、系统表访问、文件读写、命令执行等。**注意：它是正则黑名单式的危险操作提醒，不是安全边界，也可能误伤合法 SQL**。 |
-| **操作约束** | UPDATE/DELETE 必须包含 WHERE 条件。`/query` 仅允许 SELECT；`/update` 仅允许 INSERT/UPDATE/DELETE/DROP。DROP TABLE 禁止多语句执行。单行更新接口 `/table-row` 使用 PreparedStatement 参数绑定 + 标识符白名单，不拼接用户值。 |
-| **密码屏蔽** | GET 接口不返回密码；`POST /connections` 的响应目前会返回加密后的密文（不是明文），后续版本统一剥离。 |
-| **网络暴露** | 默认 `server.address=127.0.0.1`；Docker 部署时由 compose 注入 `SERVER_ADDRESS=0.0.0.0`，端口暴露受 `ports` 控制。 |
+- ✅ M0 安全/工程化加固、M1 正确性修复与测试护栏；
+- ✅ P0 前端信息架构重构（资源树 + 多 Tab + 设置/欢迎页 + Hash 路由 + 状态持久化）；
+- ✅ P1-1 表格单元格内联编辑（参数化更新 + 乐观冲突 + 行标识回退）；
+- ⏭️ P0-4 PostgreSQL 只读浏览 + 数据库级管理；
+- ⏭️ M2 查询治理（结果集上限/超时/取消）、认证与审计。
 
-> 完整安全模型、威胁边界与报告方式见 [SECURITY.md](SECURITY.md)。
-
----
-
-## 🧪 错误码
-
-响应体统一为 `{ code, message, data, success }`，失败时 HTTP 状态码与业务 `code` 对应如下：
-
-| code | HTTP | 含义 |
-|------|------|------|
-| 200 | 200 | 成功 |
-| 40001 | 400 | 参数校验失败 |
-| 40301 | 403 | SQL 被安全策略拦截 |
-| 40401 | 404 | 连接不存在 |
-| 40402 | 404 | 数据行不存在或已被删除 |
-| 40901 | 409 | 数据冲突（乐观锁） |
-| 40902 | 409 | 数据行已被修改（单元格编辑乐观冲突） |
-| 50001 | 500 | SQL 执行失败 |
-| 50002 | 500 | 数据库连接失败 |
-| 50000 | 500 | 内部错误 |
-
-前端 Axios 拦截器同时兼容「HTTP 200 + success=false」与「语义化 HTTP 状态码」两种失败形态，并统一弹出后端返回的 message。
-
----
-
-## ⚠️ 已知限制
-
-- 暂无登录认证、操作审计、多用户/权限体系；
-- PostgreSQL 目前只有"测试连接"可用，库表浏览与建表仍按 MySQL 方言实现；
-- 查询结果一次性加载到内存，没有行数上限与执行超时（大表查询需谨慎）；
-- 表数据分页由服务端执行 `COUNT(*)` + `LIMIT/OFFSET`，超大表 COUNT 会较慢（规划中做估算/缓存）；
-- CSV/Excel 导入要求表头与表列完全一致，暂不支持列子集映射；
-- 内联编辑仅支持单行单列修改：不支持批量/粘贴、撤销、整行表单编辑；无主键且无唯一非空索引的表只读；
-- 连接池状态、数据库信息两个接口后端已实现，但前端尚无对应面板。
-
----
-
-## 🧪 测试
-
-```bash
-# 后端全部测试（H2 内存库隔离：元数据库、密钥、测试数据都在 target/ 下，不污染 ./data）
-./mvnw test
-
-# 只跳过前端构建、快速跑测试
-./mvnw -Dskip.installnodenpm -Dskip.npm test
-```
-
-| 层级 | 内容 |
-|------|------|
-| L1 纯单测 | `SqlInjectionValidatorTest`、`PasswordEncryptionServiceTest`、`ConnectionPoolManagerTest`、`TableDataPaginationTest`、`RowUpdateSqlBuilderTest`、`SqlValueNormalizerTest` |
-| L2 集成测试 | `DatabaseConnectionServiceTest`（H2 内存元数据库）：加密落库、改密码、删除、连接池回收、语义异常 |
-| L3 Web 契约 | `DatabaseControllerTest`（MockMvc）：状态码 / 业务错误码 / 密码屏蔽 / 分页参数校验 / 单行更新校验 / 内联编辑开关 |
-
-CI 使用 GitHub Actions 三个 job：`backend-test`（真跑测试）、`frontend-build`、`package`。
+详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
 ---
 
 ## 🤝 参与贡献
 
-欢迎参与贡献！详见 [CONTRIBUTING.md](MD-Files/CONTRIBUTING.md)。
-
-1. Fork 本仓库
-2. 创建功能分支：`git checkout -b feature/amazing-feature`
-3. 提交代码：`git commit -m '添加了某某功能'`
-4. 推送分支：`git push origin feature/amazing-feature`
-5. 发起 Pull Request
-
----
-
-## 📝 更新日志
-
-详见 [CHANGELOG.md](MD-Files/CHANGELOG.md)。
-
-**v1.2.0（P0 前端重构 + P1-1 内联编辑，待发布）** — 资源树 + 多 Tab 工作区 + Hash 路由 + 设置/欢迎页 + 工作区状态持久化；表格双击内联编辑（参数化 UPDATE + 乐观冲突 + PK/UNIQUE 行标识回退）；新增 `/table-row`、`/settings` 接口，后端测试增至 51 个用例。
-
-**v1.1.0（M1 工程质量，待发布）** — 测试护栏（H2 内存隔离，36 个用例）+ 全量 slf4j 日志 + 语义化异常/业务错误码 + 连接池按 connectionId 生命周期管理（单池 5、并发保护）+ 表数据服务端分页接口 + CI 真跑测试。
-
-**v1.0.1（M0 修复，待发布）** — 安全限位（默认仅监听本机、移除通配 CORS、加密密钥外置）+ 修复表结构字段/自增识别/分页三处契约 bug + 后端错误信息透传 + 导入大小限制 + 仓库清理与文档诚实化。
-
-**v1.0.0**（2026-04-25）— 首次发布：支持 MySQL / PostgreSQL、Vue3 界面、SQL 注入防护、HikariCP 连接池、CSV/Excel 数据导入。
-
----
+欢迎 Issue / PR。开发流程、分支与提交规范、测试要求见 [CONTRIBUTING.md](CONTRIBUTING.md) 与
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ## 📄 开源协议
 
 MIT License — 详见 [LICENSE](LICENSE)。
 
----
-
 ## 🙏 致谢
 
-本项目基于以下优秀开源项目构建：
-
-- [Spring Boot](https://spring.io/projects/spring-boot) — 后端框架
-- [Vue.js](https://vuejs.org/) — 前端框架
-- [Element Plus](https://element-plus.org/) — UI 组件库
-- [HikariCP](https://github.com/brettwooldridge/HikariCP) — 数据库连接池
-- [Apache POI](https://poi.apache.org/) — Excel 文件解析
-- [OpenCSV](https://opencsv.sourceforge.net/) — CSV 文件解析
-
----
+[Spring Boot](https://spring.io/projects/spring-boot) ·
+[Vue.js](https://vuejs.org/) ·
+[Element Plus](https://element-plus.org/) ·
+[HikariCP](https://github.com/brettwooldridge/HikariCP) ·
+[Apache POI](https://poi.apache.org/) ·
+[OpenCSV](https://opencsv.sourceforge.net/)
 
 <div align="center">
   <b>Made with ❤️ by MiniCat Team</b>

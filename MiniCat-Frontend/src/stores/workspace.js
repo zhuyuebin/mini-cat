@@ -18,7 +18,15 @@ function readStorage() {
 }
 
 function emptyTableData() {
-  return { columns: [], rows: [], total: 0, loading: false, loaded: false, error: '' }
+  return {
+    columns: [],
+    columnDefs: [],
+    rows: [],
+    total: 0,
+    loading: false,
+    loaded: false,
+    error: ''
+  }
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {

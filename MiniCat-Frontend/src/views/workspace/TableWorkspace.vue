@@ -5,7 +5,7 @@
         <span class="crumb">{{ connectionName }} › {{ tab.database }} ›</span>
         <span class="table-name">{{ tab.table }}</span>
         <el-tag size="small" effect="plain" class="type-tag">{{ capabilities.label }}</el-tag>
-        <span class="meta">{{ tab.columns.length }} 列 · {{ tab.total }} 行</span>
+        <span class="meta">{{ tab.columnDefs.length }} 列 · {{ tab.total }} 行</span>
       </div>
       <div class="context-actions">
         <el-button size="small" :icon="Refresh" :loading="tab.loading || columnsLoading" @click="refresh">
@@ -144,11 +144,11 @@ const activeSubTab = computed({
   set: value => {
     updateTab({ subTab: value })
     if (value === 'data') loadData()
-    if (value === 'structure' && !props.tab.columns.length) loadColumns()
+    if (value === 'structure' && !props.tab.columnDefs.length) loadColumns()
   }
 })
 
-const editableColumns = computed(() => (props.tab.columns || []).filter(column => !column.autoIncrement))
+const editableColumns = computed(() => (props.tab.columnDefs || []).filter(column => !column.autoIncrement))
 
 function updateTab(patch) {
   store.updateTab(props.tab.id, patch)
@@ -162,12 +162,12 @@ function columnPlaceholder(column) {
 
 async function loadColumns(force = false) {
   if (columnsLoading.value) return
-  if (props.tab.columns.length && !force) return
+  if (props.tab.columnDefs.length && !force) return
   columnsLoading.value = true
   columnsError.value = ''
   try {
     const res = await getColumns(props.tab.connectionId, props.tab.database, props.tab.table)
-    updateTab({ columns: res.data || [] })
+    updateTab({ columnDefs: res.data || [] })
   } catch (error) {
     columnsError.value = '表结构加载失败'
     console.error('[table] 加载表结构失败', error)
@@ -190,14 +190,12 @@ async function loadData(force = false) {
     )
     const data = res.data || {}
     updateTab({
+      columns: data.columns || [],
       rows: data.rows || [],
       total: Number(data.total) || 0,
       loaded: true,
       loading: false
     })
-    if (!props.tab.columns.length && Array.isArray(data.columns) && data.columns.length) {
-      updateTab({ columns: data.columns })
-    }
   } catch (error) {
     updateTab({ loading: false, error: '表数据加载失败' })
     console.error('[table] 加载表数据失败', error)
@@ -224,7 +222,7 @@ async function onSizeChange(size) {
 }
 
 function openAddRow() {
-  if (!props.tab.columns.length) {
+  if (!props.tab.columnDefs.length) {
     ElMessage.warning('表结构尚未加载完成，请稍后再试')
     return
   }
@@ -243,7 +241,7 @@ function buildInsertSql() {
   })
   if (!columnNames.length) return null
 
-  const requiredColumns = tab.columns.filter(column => column.nullable === false && !column.autoIncrement)
+  const requiredColumns = tab.columnDefs.filter(column => column.nullable === false && !column.autoIncrement)
   const missing = requiredColumns.filter(column => {
     const value = newRow.value[column.columnName]
     return value === null || value === undefined || String(value) === ''
@@ -255,7 +253,7 @@ function buildInsertSql() {
 
   const values = columnNames.map(name => {
     const value = newRow.value[name]
-    const column = tab.columns.find(item => item.columnName === name)
+    const column = tab.columnDefs.find(item => item.columnName === name)
     const dataType = String(column?.dataType || '').toUpperCase()
     const numeric = ['INT', 'BIGINT', 'TINYINT', 'SMALLINT', 'MEDIUMINT', 'DECIMAL', 'DOUBLE', 'FLOAT', 'NUMERIC'].some(type => dataType.includes(type))
       || dataType.includes('INT')
@@ -287,7 +285,7 @@ async function submitAddRow() {
 
 async function deleteRow(row) {
   const tab = props.tab
-  const primaryKeys = (tab.columns || []).filter(column => column.columnKey === 'PRI')
+  const primaryKeys = (tab.columnDefs || []).filter(column => column.columnKey === 'PRI')
   if (!primaryKeys.length) {
     ElMessage.error('该表没有主键，无法安全删除单行')
     return
@@ -367,7 +365,7 @@ function onMoreCommand(command) {
 }
 
 onMounted(() => {
-  if (!props.tab.columns.length) loadColumns()
+  if (!props.tab.columnDefs.length) loadColumns()
   if (props.tab.subTab === 'data' && !props.tab.loaded) loadData()
 })
 </script>

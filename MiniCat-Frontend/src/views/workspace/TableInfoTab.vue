@@ -14,7 +14,7 @@
         <el-tag size="small">{{ tab.table }}</el-tag>
       </el-descriptions-item>
       <el-descriptions-item label="列数">
-        <el-tag type="primary" size="small">{{ tab.columns.length }}</el-tag>
+        <el-tag type="primary" size="small">{{ tab.columnDefs.length }}</el-tag>
       </el-descriptions-item>
       <el-descriptions-item label="行数">
         <el-tag type="success" size="small">{{ tab.total }}</el-tag>

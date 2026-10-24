@@ -1,8 +1,8 @@
 <template>
   <div class="table-structure-tab" v-loading="loading">
     <el-table
-      v-if="tab.columns.length"
-      :data="tab.columns"
+      v-if="tab.columnDefs.length"
+      :data="tab.columnDefs"
       style="width: 100%; height: 100%"
       border
       stripe

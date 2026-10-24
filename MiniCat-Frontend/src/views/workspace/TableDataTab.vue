@@ -5,7 +5,7 @@
         共 <b>{{ tab.total }}</b> 条 · 第 {{ tab.page }} / {{ pageCount }} 页
       </span>
       <div class="actions">
-        <el-button size="small" type="primary" @click="$emit('add-row')" :disabled="tab.loading || !tab.columns.length">
+        <el-button size="small" type="primary" @click="$emit('add-row')" :disabled="tab.loading || !tab.columnDefs.length">
           <el-icon><Plus /></el-icon>
           <span>新增行</span>
         </el-button>
@@ -23,7 +23,7 @@
       >
         <el-table-column type="index" label="#" width="62" align="center" :index="globalIndex" />
         <el-table-column
-          v-for="column in tab.columns"
+          v-for="column in dataColumnNames"
           :key="column"
           :prop="column"
           :label="column"
@@ -41,7 +41,7 @@
         <el-button size="small" @click="$emit('refresh')">重试</el-button>
       </el-empty>
       <el-empty v-else-if="!tab.loading" description="暂无数据">
-        <el-button size="small" type="primary" @click="$emit('add-row')" :disabled="!tab.columns.length">新增行</el-button>
+        <el-button size="small" type="primary" @click="$emit('add-row')" :disabled="!tab.columnDefs.length">新增行</el-button>
         <el-button size="small" @click="$emit('refresh')">刷新</el-button>
       </el-empty>
     </div>
@@ -76,6 +76,14 @@ const pageCount = computed(() => {
   const size = Number(props.tab.pageSize) || 20
   return Math.max(1, Math.ceil(total / size))
 })
+
+/**
+ * 数据列名：后端 /table-data 返回的是字符串数组。
+ * 这里做一次防御：如果历史状态里混入了列对象，也能取到列名而不是渲染成 [object Object]。
+ */
+const dataColumnNames = computed(() => (props.tab.columns || [])
+  .map(column => (typeof column === 'string' ? column : (column && column.columnName) || ''))
+  .filter(Boolean))
 
 function globalIndex(index) {
   return (Number(props.tab.page) - 1) * Number(props.tab.pageSize) + index + 1

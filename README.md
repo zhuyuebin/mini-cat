@@ -33,9 +33,9 @@ MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器�
 
 ### 🖥️ 现代化 Web 界面
 - **Vue 3** + **Element Plus** 构建的清爽界面
-- 三栏布局：侧边导航 + 内容区 + 上下文工具栏
+- 左侧资源树（连接 → 数据库 → 表）+ 多 Tab 工作区 + 底部状态栏
+- 同时打开多张表 / 多个 SQL 查询，切换不丢上下文、页码与 SQL 草稿（`Alt+T` 新建查询、`Alt+W` 关闭 Tab）
 - 实时连接状态显示（成功 / 失败 / 未测试）
-- 连接测试时间的相对时间显示（刚刚 / N分钟前 / N天前）
 
 ### 🛠️ SQL 工作台
 - 等宽字体 SQL 编辑器
@@ -47,10 +47,18 @@ MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器�
 
 ### 📊 数据表管理
 - 浏览所有表及行数统计
-- 查看表结构（列名、类型、是否可空、主键、默认值、注释）
+- 查看表结构（列名、类型、是否可空、主键/唯一非空索引、默认值、注释）
 - 可视化表单 **创建表**，支持多列定义
 - **删除表** 确认操作
 - 点击表名快速生成 `SELECT * FROM <table> LIMIT 100`
+
+### ✏️ 表格内联编辑
+- **双击单元格**直接修改数据，Enter / 失焦保存，Esc 取消（未修改自动退出）
+- 按列类型提供编辑器：文本 / 数字 / 日期 / 日期时间 / 布尔
+- 行定位优先主键；无主键时回退到 `UNIQUE NOT NULL` 唯一索引；两者都没有则整表只读并提示
+- 保存走服务端**参数化 UPDATE**，并带被修改列旧值做乐观冲突检测（409 提示 + 自动刷新，不静默覆盖）
+- 行标识列、自增列、BLOB / JSON / 空间类型不可编辑；必填列清空会被拦截
+- 可用 `minicat.ui.inline-edit-enabled=false` 关闭内联编辑，降级为只读
 
 ### 📥 数据导入
 - 支持 **CSV**（`.csv`）和 **Excel**（`.xlsx` / `.xls`）文件导入
@@ -286,6 +294,8 @@ mini-cat/
 | `POST` | `/connections/{id}/create-table?database={db}` | 创建数据表 |
 | `DELETE` | `/connections/{id}/tables?database={db}&table={tbl}` | 删除数据表 |
 | `GET` | `/connections/{id}/table-data?database={db}&table={tbl}&page=1&size=50` | 表数据服务端分页（返回 rows + total） |
+| `PUT` | `/connections/{id}/table-row?database={db}` | 单行/单元格更新（参数化 UPDATE + 可选 expected 旧值乐观 CAS） |
+| `GET` | `/settings` | 前端功能开关（当前含内联编辑开关） |
 
 ### 数据导入
 | 方法 | 接口 | 说明 |
@@ -311,6 +321,7 @@ server.port=8888                              # HTTP 端口
 server.address=127.0.0.1                      # 默认只监听本机
 spring.servlet.multipart.max-file-size=50MB   # CSV/Excel 导入大小上限
 minicat.security.key-file=./data/secret.key   # 连接密码加密密钥文件
+minicat.ui.inline-edit-enabled=true           # 单元格内联编辑开关（共享环境可设 false 只读）
 spring.datasource.hikari.maximum-pool-size=5  # 每个目标库连接池上限
 spring.application.name=MiniCat
 logging.level.com.minicat=DEBUG               # 包级别调试日志
@@ -347,7 +358,7 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 |------|----------|
 | **密码加密** | `PasswordEncryptionService` 使用 AES-256-GCM，密文格式 `v2:Base64(IV+密文)`；密钥来自 `MINICAT_SECRET_KEY` 或 `./data/secret.key`（首次启动生成）。旧版本固定种子的历史密文仍可解密，并在下次保存时升级。 |
 | **SQL 注入防护** | `SqlInjectionValidator` 拦截常见注入特征：UNION 注入、时间盲注、系统表访问、文件读写、命令执行等。**注意：它是正则黑名单式的危险操作提醒，不是安全边界，也可能误伤合法 SQL**。 |
-| **操作约束** | UPDATE/DELETE 必须包含 WHERE 条件。`/query` 仅允许 SELECT；`/update` 仅允许 INSERT/UPDATE/DELETE/DROP。DROP TABLE 禁止多语句执行。 |
+| **操作约束** | UPDATE/DELETE 必须包含 WHERE 条件。`/query` 仅允许 SELECT；`/update` 仅允许 INSERT/UPDATE/DELETE/DROP。DROP TABLE 禁止多语句执行。单行更新接口 `/table-row` 使用 PreparedStatement 参数绑定 + 标识符白名单，不拼接用户值。 |
 | **密码屏蔽** | GET 接口不返回密码；`POST /connections` 的响应目前会返回加密后的密文（不是明文），后续版本统一剥离。 |
 | **网络暴露** | 默认 `server.address=127.0.0.1`；Docker 部署时由 compose 注入 `SERVER_ADDRESS=0.0.0.0`，端口暴露受 `ports` 控制。 |
 
@@ -365,7 +376,9 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 | 40001 | 400 | 参数校验失败 |
 | 40301 | 403 | SQL 被安全策略拦截 |
 | 40401 | 404 | 连接不存在 |
+| 40402 | 404 | 数据行不存在或已被删除 |
 | 40901 | 409 | 数据冲突（乐观锁） |
+| 40902 | 409 | 数据行已被修改（单元格编辑乐观冲突） |
 | 50001 | 500 | SQL 执行失败 |
 | 50002 | 500 | 数据库连接失败 |
 | 50000 | 500 | 内部错误 |
@@ -381,7 +394,7 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 - 查询结果一次性加载到内存，没有行数上限与执行超时（大表查询需谨慎）；
 - 表数据分页由服务端执行 `COUNT(*)` + `LIMIT/OFFSET`，超大表 COUNT 会较慢（规划中做估算/缓存）；
 - CSV/Excel 导入要求表头与表列完全一致，暂不支持列子集映射；
-- 连接"选中"状态存在前端内存中，刷新页面会丢失（规划中）；
+- 内联编辑仅支持单行单列修改：不支持批量/粘贴、撤销、整行表单编辑；无主键且无唯一非空索引的表只读；
 - 连接池状态、数据库信息两个接口后端已实现，但前端尚无对应面板。
 
 ---
@@ -398,9 +411,9 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 
 | 层级 | 内容 |
 |------|------|
-| L1 纯单测 | `SqlInjectionValidatorTest`、`PasswordEncryptionServiceTest`、`ConnectionPoolManagerTest`、`TableDataPaginationTest` |
+| L1 纯单测 | `SqlInjectionValidatorTest`、`PasswordEncryptionServiceTest`、`ConnectionPoolManagerTest`、`TableDataPaginationTest`、`RowUpdateSqlBuilderTest`、`SqlValueNormalizerTest` |
 | L2 集成测试 | `DatabaseConnectionServiceTest`（H2 内存元数据库）：加密落库、改密码、删除、连接池回收、语义异常 |
-| L3 Web 契约 | `DatabaseControllerTest`（MockMvc）：状态码 / 业务错误码 / 密码屏蔽 / 分页参数校验 |
+| L3 Web 契约 | `DatabaseControllerTest`（MockMvc）：状态码 / 业务错误码 / 密码屏蔽 / 分页参数校验 / 单行更新校验 / 内联编辑开关 |
 
 CI 使用 GitHub Actions 三个 job：`backend-test`（真跑测试）、`frontend-build`、`package`。
 
@@ -421,6 +434,8 @@ CI 使用 GitHub Actions 三个 job：`backend-test`（真跑测试）、`fronte
 ## 📝 更新日志
 
 详见 [CHANGELOG.md](MD-Files/CHANGELOG.md)。
+
+**v1.2.0（P0 前端重构 + P1-1 内联编辑，待发布）** — 资源树 + 多 Tab 工作区 + Hash 路由 + 设置/欢迎页 + 工作区状态持久化；表格双击内联编辑（参数化 UPDATE + 乐观冲突 + PK/UNIQUE 行标识回退）；新增 `/table-row`、`/settings` 接口，后端测试增至 51 个用例。
 
 **v1.1.0（M1 工程质量，待发布）** — 测试护栏（H2 内存隔离，36 个用例）+ 全量 slf4j 日志 + 语义化异常/业务错误码 + 连接池按 connectionId 生命周期管理（单池 5、并发保护）+ 表数据服务端分页接口 + CI 真跑测试。
 

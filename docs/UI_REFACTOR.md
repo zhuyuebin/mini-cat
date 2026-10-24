@@ -366,3 +366,52 @@ src/
   浏览器保留键无法被页面拦截；
 - 资源树节点右键菜单未实现：低频/危险动作已收进表工作区的「更多 ▾」与设置页；
 - 数据库级管理（新建/删除库）与 PostgreSQL 浏览能力仍为 P0-4 规划。
+
+---
+
+## 17. P1-1 表格内联编辑（已实现）
+
+### 交互
+
+- 数据页双击单元格进入编辑；Enter 或失焦保存，Esc 取消，值未变化时静默退出；
+- 编辑器按列类型选择：文本/数字（输入框）、DATE（日期）、DATETIME/TIMESTAMP（日期时间）、
+  BOOLEAN/BOOL（下拉）；
+- 保存中禁止重复提交；切换分页/切换 Tab 自动放弃未保存编辑；
+- 保存成功用接口返回的最新行回填；409（行已被修改）与 404（行已删除）提示后自动刷新当前页。
+
+### 行标识（决定“能否编辑/定位哪一行”）
+
+| 优先级 | 条件 | 行为 |
+|---|---|---|
+| 1 | 主键 | `rowIdentityPart=true`，`columnKey=PRI` |
+| 2 | 无主键但有 `UNIQUE NOT NULL` 索引 | 取第一个可用索引的全部列，`columnKey=UNI` |
+| 3 | 都没有 | 整表只读，顶部横幅提示建议添加主键 |
+
+### 后端契约
+
+```http
+PUT /api/database/connections/{id}/table-row?database={db}
+{
+  "table": "user",
+  "keys":     { "id": 1 },
+  "changes":  { "username": "zhangsan2", "beizhu": null },
+  "expected": { "username": "zhangsan1" }
+}
+```
+
+- `keys` 必须覆盖服务端判定的全部行标识列；`changes` 非空；
+- `expected` 可选，只能引用 `changes` 中的列；旧值为 null 时生成 `AND col IS NULL`；
+- 表/列名走白名单 + 反引号，值全部 `?` 参数绑定；
+- 行标识列、自增列、二进制/JSON/空间类型禁止修改；
+- 错误码：`40402` 行不存在、`40902` 乐观冲突。
+
+### 开关
+
+`minicat.ui.inline-edit-enabled=true|false`（`GET /api/database/settings` 下发）。
+个人本地使用默认开启；共享/生产环境可关闭为只读。
+
+### 测试
+
+- `RowUpdateSqlBuilderTest`：标识符白名单、占位符顺序、CAS、`IS NULL`、复合主键；
+- `SqlValueNormalizerTest`：数字/日期/日期时间/布尔/NULL/类型白名单；
+- `DatabaseControllerTest`：`/settings` 开关、`/table-row` 的 404/400 契约。

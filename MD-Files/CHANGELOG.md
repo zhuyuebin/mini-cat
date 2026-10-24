@@ -24,8 +24,22 @@
   - 设置页（连接管理迁入）、欢迎/帮助页与无连接引导
   - 工作区上下文持久化：Tab / 激活 Tab / 展开节点 / 上次选择 / 每页条数 / SQL 草稿
 - 连接类型能力矩阵 `capabilities.js`：MySQL 完整可用；PostgreSQL 在 P0 仅新增/编辑/测试连接
+- P1-1 表格内联编辑（TableWorkspace 数据页）：
+  - 双击单元格编辑（文本 / 数字 / 日期 / 日期时间 / 布尔），Enter/失焦保存、Esc 取消
+  - 后端 `PUT /connections/{id}/table-row`：PreparedStatement 参数化 UPDATE + 可选
+    `expected` 旧值乐观 CAS（40902 冲突 / 40402 行不存在）
+  - 行标识三层：主键 → 无主键时回退 `UNIQUE NOT NULL` 唯一索引（`getColumns` 新增
+    `rowIdentityPart`，并在 `columnKey` 标记 `UNI`）→ 都没有则整表只读提示
+  - 行标识列 / 自增列 / BLOB / JSON / 空间类型不可编辑；必填列清空被拦截
+  - `GET /settings` 暴露 `minicat.ui.inline-edit-enabled` 开关（默认 true，可降级只读）
+  - 结构页“键”列展示 PK / UK（唯一非空索引=行标识）
+- P1-1 测试：`RowUpdateSqlBuilderTest`、`SqlValueNormalizerTest`、MockMvc
+  `table-row`/`settings` 契约（后端用例 36 → 51）
 
 ### 修复
+- 表数据表头显示 `[object Object]`、单元格全空（P0-2 将列结构对象与数据列名复用同一字段；
+  拆分为 `columnDefs` 与 `columns` 并加防御归一化）
+- CAS 旧值为 NULL 时误判冲突（SQL `col = NULL` 恒不成立，改为 `IS NULL` 且不占参数位）
 - 表结构页"可空 / 默认值"字段名与后端 DTO 不匹配导致显示错误
 - 自增列识别失效（JDBC 的 `IS_AUTOINCREMENT` 归一化为 `autoIncrement` 布尔字段）
 - 表数据分页总数错误（此前把当前页行数当总数，永远只有一页）
@@ -54,6 +68,8 @@
 - 连接管理入口从一级导航迁入「设置」；默认打开工作区而非营销首页
 - 删除旧 `Home.vue` / `Connections.vue` / `Query.vue` / `Tables.vue` / `layout/index.vue` / `stores/connection.js`
 - 快捷键：`Alt+T` 新建查询、`Alt+W` 关闭 Tab、`Ctrl+Enter` 执行 SQL（浏览器保留的 Ctrl+T/W 不可拦截）
+- 表数据页列模型拆分：`columnDefs` 保存列结构（结构页/新增行/行标识/类型推断），
+  `columns` 仅保存 `/table-data` 返回的字符串列名
 
 ---
 

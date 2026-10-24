@@ -29,9 +29,14 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="键" width="70" align="center">
+      <el-table-column label="键" width="86" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.columnKey === 'PRI'" type="danger" size="small">PK</el-tag>
+          <el-tooltip v-if="row.columnKey === 'PRI'" content="主键" placement="top">
+            <el-tag type="danger" size="small">PK</el-tag>
+          </el-tooltip>
+          <el-tooltip v-else-if="row.rowIdentityPart" content="唯一非空索引（用于定位数据行）" placement="top">
+            <el-tag type="warning" size="small">UK</el-tag>
+          </el-tooltip>
           <span v-else>-</span>
         </template>
       </el-table-column>

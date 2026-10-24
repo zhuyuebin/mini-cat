@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { getAllConnections, getDatabases, getTables } from '@/api/database'
+import { getAllConnections, getDatabases, getTables, getUiSettings } from '@/api/database'
 import { getConnectionCapabilities } from '@/utils/capabilities'
 
 const STORAGE_KEY = 'minicat.workspace.v1'
@@ -42,6 +42,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const activeTabId = ref(null)
   const treeSelection = ref(null)
   const pageSizeDefault = ref(20)
+  const uiSettings = ref({ inlineEditEnabled: true })
 
   let querySeq = 1
   let persistTimer = null
@@ -92,6 +93,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     dbCache.value = {}
     tableCache.value = {}
     await loadConnections()
+  }
+
+  async function loadUiSettings() {
+    try {
+      const res = await getUiSettings()
+      uiSettings.value = { inlineEditEnabled: res.data?.inlineEditEnabled !== false }
+    } catch (error) {
+      console.warn('[workspace] UI 设置加载失败，使用默认值', error)
+    }
   }
 
   function ensureDbEntry(connectionId) {
@@ -359,6 +369,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    */
   async function init() {
     await loadConnections()
+    await loadUiSettings()
     const saved = readStorage()
     if (!saved || saved.version !== STORAGE_VERSION) return { droppedTabs: 0 }
 
@@ -408,6 +419,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activeTabId,
     treeSelection,
     pageSizeDefault,
+    uiSettings,
     hasConnections,
     activeTab,
     activeConnection,
@@ -417,6 +429,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     databaseKey,
     loadConnections,
     refreshConnections,
+    loadUiSettings,
     loadDatabases,
     loadTables,
     isExpanded,

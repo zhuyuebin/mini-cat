@@ -163,3 +163,21 @@ export function dropTable(id, database, table) {
     params: { database, table }
   })
 }
+
+// 前端功能开关（内联编辑等）
+export function getUiSettings() {
+  return request({
+    url: '/database/settings',
+    method: 'get'
+  })
+}
+
+// 单行/单元格更新（服务端参数化 SQL + 可选 expected 乐观 CAS）
+export function updateTableCell(id, database, data) {
+  return request({
+    url: `/database/connections/${id}/table-row`,
+    method: 'put',
+    params: { database },
+    data
+  })
+}

@@ -224,16 +224,12 @@ const handleDelete = (row) => {
 // 测试连接
 const handleTest = async (row) => {
   try {
-    const res = await testConnection(row.id)
-    if (res.data) {
-      ElMessage.success('连接测试成功')
-    } else {
-      ElMessage.error('连接测试失败')
-    }
-    // 重新加载连接列表以获取最新状态
-    await loadConnections()
+    await testConnection(row.id)
+    ElMessage.success('连接测试成功')
   } catch (error) {
-    ElMessage.error('连接测试失败')
+    // 失败原因由 axios 响应拦截器统一弹出（如连接超时、认证失败等）
+    console.error('连接测试失败:', error)
+  } finally {
     // 重新加载连接列表以获取最新状态
     await loadConnections()
   }

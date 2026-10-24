@@ -184,10 +184,10 @@
                     <el-tag size="small" type="primary">{{ row.dataType }}</el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="isNullable" label="可空" width="80" align="center">
+                <el-table-column label="可空" width="80" align="center">
                   <template #default="{ row }">
-                    <el-tag :type="row.isNullable === 'YES' ? 'warning' : 'success'" size="small">
-                      {{ row.isNullable === 'YES' ? '是' : '否' }}
+                    <el-tag :type="row.nullable === false ? 'warning' : 'success'" size="small">
+                      {{ row.nullable === false ? '否' : '是' }}
                     </el-tag>
                   </template>
                 </el-table-column>
@@ -199,8 +199,13 @@
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="columnDefault" label="默认值" width="100" show-overflow-tooltip />
-                <el-table-column prop="extra" label="额外" width="100" show-overflow-tooltip />
+                <el-table-column prop="defaultValue" label="默认值" width="100" show-overflow-tooltip />
+                <el-table-column label="自增" width="80" align="center">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.autoIncrement" type="success" size="small">自增</el-tag>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="columnComment" label="注释" min-width="150" show-overflow-tooltip />
               </el-table>
             </el-tab-pane>
@@ -584,7 +589,7 @@ const handleConnectionChange = async (connectionId) => {
     const res = await getDatabases(connectionId)
     databases.value = res.data || []
   } catch (error) {
-    ElMessage.error('获取数据库列表失败')
+    console.error('获取数据库列表失败:', error)
   }
 }
 
@@ -602,7 +607,7 @@ const handleDatabaseChange = async (database) => {
     const res = await getTables(selectedConnectionId.value, database)
     tables.value = res.data || []
   } catch (error) {
-    ElMessage.error('获取表列表失败')
+    console.error('获取表列表失败:', error)
   } finally {
     tablesLoading.value = false
   }
@@ -628,7 +633,7 @@ const handleTableSelect = async (table) => {
     )
     columns.value = res.data || []
   } catch (error) {
-    ElMessage.error('获取列信息失败')
+    console.error('获取列信息失败:', error)
   } finally {
     columnsLoading.value = false
   }
@@ -643,22 +648,22 @@ const loadTableData = async () => {
   
   try {
     const offset = (currentPage.value - 1) * pageSize.value
-    // 移除反引号,避免触发SQL注入检测
-    const sql = `SELECT * FROM ${selectedTable.value.tableName} LIMIT ${pageSize.value} OFFSET ${offset}`
-    
-    const res = await executeQuery(
-      selectedConnectionId.value,
-      selectedDatabase.value,
-      sql
-    )
-    
-    if (res.data && res.data.rows) {
-      tableData.value = res.data.rows
-      dataColumns.value = res.data.columns || []
-      totalRows.value = res.data.totalRows || res.data.rows.length
+    const tableName = selectedTable.value.tableName
+    // /query 接口返回的 totalRows 只是"本次返回的行数"，不能当作分页总数；
+    // 这里额外查一次 COUNT(*) 才能让分页器拿到真实总行数。
+    const [countRes, pageRes] = await Promise.all([
+      executeQuery(selectedConnectionId.value, selectedDatabase.value, `SELECT COUNT(*) AS total FROM ${tableName}`),
+      executeQuery(selectedConnectionId.value, selectedDatabase.value, `SELECT * FROM ${tableName} LIMIT ${pageSize.value} OFFSET ${offset}`)
+    ])
+
+    const total = Number(countRes.data?.rows?.[0]?.total ?? 0)
+    totalRows.value = Number.isFinite(total) ? total : 0
+    if (pageRes.data && pageRes.data.rows) {
+      tableData.value = pageRes.data.rows
+      dataColumns.value = pageRes.data.columns || []
     }
   } catch (error) {
-    ElMessage.error('加载表数据失败: ' + (error.response?.data?.message || error.message))
+    // 错误提示由 axios 响应拦截器统一弹出，这里只记录日志，避免重复弹窗
     console.error('Load table data error:', error)
   } finally {
     dataLoading.value = false
@@ -699,7 +704,8 @@ const showAddRowDialog = () => {
 
 // 判断是否为自增字段
 const isAutoIncrement = (col) => {
-  return col.extra && col.extra.toLowerCase().includes('auto_increment')
+  // 后端已把 JDBC 的 IS_AUTOINCREMENT（YES/NO）归一化为布尔字段 autoIncrement
+  return col.autoIncrement === true
 }
 
 // 获取占位符文本
@@ -708,7 +714,7 @@ const getPlaceholder = (col) => {
     return '自增字段，无需填写'
   }
   if (col.columnKey === 'PRI') {
-    return col.isNullable === 'NO' ? '请输入主键值' : '请输入主键值（可选）'
+    return col.nullable === false ? '请输入主键值' : '请输入主键值（可选）'
   }
   return `输入${col.columnName}`
 }
@@ -724,7 +730,7 @@ const submitAddRow = async () => {
     }
     
     // 验证必填字段
-    const requiredColumns = columns.value.filter(col => col.isNullable === 'NO' && !isAutoIncrement(col))
+    const requiredColumns = columns.value.filter(col => col.nullable === false && !isAutoIncrement(col))
     for (const col of requiredColumns) {
       if (!newRowData.value[col.columnName] && newRowData.value[col.columnName] !== 0) {
         ElMessage.warning(`字段 ${col.columnName} 为必填项`)
@@ -758,7 +764,8 @@ const submitAddRow = async () => {
       loadTableData()
     }
   } catch (error) {
-    ElMessage.error('新增失败: ' + (error.response?.data?.message || error.message))
+    // 错误提示由 axios 响应拦截器统一处理，避免重复弹窗
+    console.error('新增行失败:', error)
   }
 }
 
@@ -808,7 +815,7 @@ const deleteRow = async (row, index) => {
     totalRows.value--
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败: ' + (error.response?.data?.message || error.message))
+      console.error('删除行失败:', error)
     }
   } finally {
     deletingRows.value.delete(index)
@@ -876,7 +883,7 @@ const submitCustomSQL = async () => {
       totalRows.value = res.data.totalRows || res.data.rows.length
     }
   } catch (error) {
-    ElMessage.error('执行失败: ' + (error.response?.data?.message || error.message))
+    console.error('执行自定义SQL失败:', error)
   }
 }
 
@@ -954,7 +961,7 @@ const submitCreateTable = async () => {
     // 刷新表列表
     handleDatabaseChange(selectedDatabase.value)
   } catch (error) {
-    ElMessage.error('创建表失败: ' + (error.response?.data?.message || error.message))
+    console.error('创建表失败:', error)
   }
 }
 
@@ -1001,7 +1008,7 @@ const submitImport = async () => {
       ElMessage.error(result.message)
     }
   } catch (error) {
-    ElMessage.error('导入失败: ' + (error.response?.data?.message || error.message))
+    console.error('导入失败:', error)
   } finally {
     importing.value = false
   }
@@ -1043,7 +1050,7 @@ const handleDeleteTable = async () => {
     // 清空选中的表
     selectedTable.value = null
   } catch (error) {
-    ElMessage.error('删除表失败: ' + (error.response?.data?.message || error.message))
+    console.error('删除表失败:', error)
   }
 }
 

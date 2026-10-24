@@ -181,6 +181,23 @@ public class GlobalExceptionHandler {
     }
     
     /**
+     * 处理业务层抛出的 RuntimeException。
+     *
+     * <p>M0 阶段 Service 层仍用 RuntimeException 表达"SQL 校验失败 / 连接不存在"等业务错误，
+     * 这里先把真实原因透传给前端，避免所有失败都退化成
+     * "An unexpected error occurred"。后续会把 Service 层逐步迁移到 DatabaseException 体系。
+     */
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiResponseDTO<Void>> handleRuntimeException(RuntimeException ex) {
+        logger.warn("Request failed: {}", ex.getMessage());
+        String message = (ex.getMessage() == null || ex.getMessage().isBlank())
+                ? "Request failed"
+                : ex.getMessage();
+        ApiResponseDTO<Void> response = ApiResponseDTO.error(500, message);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    /**
      * 处理所有未捕获的异常
      */
     @ExceptionHandler(Exception.class)

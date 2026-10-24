@@ -3,7 +3,8 @@ import { ElMessage } from 'element-plus'
 
 const request = axios.create({
   baseURL: '/api',
-  timeout: 30000
+  // 数据导入（CSV/Excel，最大 50MB）可能耗时较久，超时时间放宽到 120s
+  timeout: 120000
 })
 
 // 请求拦截器

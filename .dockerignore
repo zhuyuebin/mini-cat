@@ -1,0 +1,27 @@
+# 构建上下文瘦身：只保留构建 JAR 真正需要的文件
+
+# 版本库与工具配置
+.git
+.gitignore
+.gitattributes
+.gitee
+.github
+.idea
+.vscode
+*.iml
+
+# 构建产物与运行数据（绝不能把 data/ 打进镜像，里面是 H2 元数据和加密密钥）
+target
+MiniCat-Frontend/node_modules
+MiniCat-Frontend/dist
+data
+logs
+*.log
+
+# 文档与本地脚本不属于运行必需
+MD-Files
+WINDOWS_*.md
+*.md
+.dockerignore
+Dockerfile
+docker-compose.yml

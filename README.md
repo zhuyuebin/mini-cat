@@ -19,13 +19,16 @@
 
 MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器界面管理 MySQL 和 PostgreSQL 数据库。连接多个数据库、执行 SQL 查询、浏览数据表、导入数据、监控连接池 — 无需安装桌面客户端，打开浏览器即可使用。
 
+> [!WARNING]
+> **本项目定位为「本机单用户工具」**：默认只监听 `127.0.0.1`，且没有登录认证。请勿直接部署到公网或不受信任的网络；远程访问请叠加反向代理 + HTTPS + Basic Auth / VPN。安全模型与已知限制见 [SECURITY.md](SECURITY.md)。
+
 ---
 
 ## ✨ 功能特性
 
 ### 🔌 多数据库支持
-- **MySQL** 5.7+ / 8.0+
-- **PostgreSQL** 12+
+- **MySQL** 5.7+ / 8.0+（完整支持：连接、库表浏览、查询、建表、导入）
+- **PostgreSQL** 12+（**实验性**：当前仅"测试连接"可用，库表浏览/建表等仍按 MySQL 方言实现，见「已知限制」）
 - 同时管理多个数据库连接
 
 ### 🖥️ 现代化 Web 界面
@@ -39,7 +42,8 @@ MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器�
 - 基于 `sql-formatter` 的 **一键 SQL 格式化**
 - 支持执行 **SELECT 查询** 和 **INSERT / UPDATE / DELETE** 语句
 - 危险操作（DELETE / DROP / TRUNCATE）二次确认弹窗
-- 查询结果分页表格展示，含执行耗时
+- 查询结果表格展示，含执行耗时
+- 数据表分页浏览（每页条数可选 20/50/100/200）
 
 ### 📊 数据表管理
 - 浏览所有表及行数统计
@@ -55,17 +59,18 @@ MiniCat 是一个基于 Web 的数据库管理工具，通过直观的浏览器�
 - 详细的导入结果报告（总计 / 成功 / 失败行数）
 
 ### 🔒 安全防护
-- 连接密码 **AES 加密存储**
-- 全面的 **SQL 注入检测**（基于正则模式匹配）
+- 连接密码 **AES-256-GCM 加密存储**，密钥支持环境变量或本地密钥文件
+- **SQL 注入检测**：拦截常见注入特征（危险操作提醒，不是安全边界，可能误伤合法 SQL）
 - 针对 SELECT / INSERT / UPDATE / DELETE / DROP TABLE 分别校验
-- API 响应中 **绝不返回密码**
+- API 响应中 **绝不返回密码明文**
 - UPDATE / DELETE 强制包含 WHERE 条件
+- **默认只监听 `127.0.0.1`**，避免无意中暴露到局域网
 
 ### ⚡ 性能优化
 - 每个数据库连接独立的 **HikariCP 连接池**
 - MySQL 专项优化（预编译语句缓存、批量改写、utf8mb4 字符集）
 - PostgreSQL 专项优化（prepare threshold 调优）
-- 连接池实时监控（活跃数 / 空闲数 / 总数 / 等待线程数）
+- 连接池状态接口（`/pool-status`；前端监控面板规划中）
 
 ### 🚀 部署就绪
 - **GitHub Actions** CI/CD 自动构建
@@ -161,7 +166,7 @@ mini-cat/
 │   │   ├── HikariConfigProperties.java      # 连接池参数配置
 │   │   └── SecurityConfig.java              # Spring Security（禁用 CSRF，开放所有请求）
 │   ├── controller/
-│   │   └── DatabaseController.java          # REST API 控制器（15 个接口）
+│   │   └── DatabaseController.java          # REST API 控制器（16 个接口）
 │   ├── Services/
 │   │   └── DatabaseService.java             # 服务层接口
 │   ├── ServiceImpls/
@@ -205,6 +210,8 @@ mini-cat/
 │   ├── SECURITY_ENHANCEMENTS.md              # 安全增强说明
 │   └── USAGE.md                              # 使用指南
 ├── .github/workflows/build.yml               # CI：push/PR 自动构建
+├── .dockerignore                              # Docker 构建上下文忽略规则
+├── SECURITY.md                                # 安全模型、威胁边界与已知限制
 ├── pom.xml                                    # Maven 配置（含前端构建插件）
 ├── start.sh                                   # Linux/macOS 启动脚本
 ├── start_win.bat                              # Windows 启动脚本
@@ -268,9 +275,14 @@ mini-cat/
 
 ```properties
 server.port=8888                              # HTTP 端口
+server.address=127.0.0.1                      # 默认只监听本机
+spring.servlet.multipart.max-file-size=50MB   # CSV/Excel 导入大小上限
+minicat.security.key-file=./data/secret.key   # 连接密码加密密钥文件
 spring.application.name=MiniCat
 logging.level.com.minicat=DEBUG               # 包级别调试日志
 ```
+
+容器部署时由 `docker-compose.yml` 注入 `SERVER_ADDRESS=0.0.0.0`（容器内监听所有网卡，对外暴露仍受 `ports` 限制）。
 
 ### 生产环境
 
@@ -286,9 +298,12 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 - **连接池**：最小 10、最大 20 个连接
 - **JPA**：`ddl-auto=update`，SQL 日志关闭
 
-### H2 元数据库
+### 元数据与密钥
 
-连接配置存储在 H2 文件数据库中，路径为 `./data/minicat_db`。首次运行自动创建。备份该目录即可保留所有已保存的连接配置。
+- **元数据库**：H2 文件数据库 `./data/minicat_db`，首次运行自动创建；
+- **加密密钥**：`./data/secret.key`，首次运行自动生成；也可用环境变量 `MINICAT_SECRET_KEY` 提供（容器部署推荐）；
+- **备份 `data/` 目录 = 保留全部连接配置与密钥**；换机器/重建容器时请一并保留，否则历史密码无法解密；
+- `data/` 已在 `.gitignore` 中忽略，请勿提交。
 
 ---
 
@@ -296,10 +311,25 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 
 | 措施 | 实现方式 |
 |------|----------|
-| **密码加密** | `PasswordEncryptionService` 使用 AES 加密。密码加密后存储，仅在建立连接时解密。 |
-| **SQL 注入防护** | `SqlInjectionValidator` 拦截危险模式：UNION 注入、时间盲注、系统表访问、文件读写、命令执行等。 |
+| **密码加密** | `PasswordEncryptionService` 使用 AES-256-GCM，密文格式 `v2:Base64(IV+密文)`；密钥来自 `MINICAT_SECRET_KEY` 或 `./data/secret.key`（首次启动生成）。旧版本固定种子的历史密文仍可解密，并在下次保存时升级。 |
+| **SQL 注入防护** | `SqlInjectionValidator` 拦截常见注入特征：UNION 注入、时间盲注、系统表访问、文件读写、命令执行等。**注意：它是正则黑名单式的危险操作提醒，不是安全边界，也可能误伤合法 SQL**。 |
 | **操作约束** | UPDATE/DELETE 必须包含 WHERE 条件。`/query` 仅允许 SELECT；`/update` 仅允许 INSERT/UPDATE/DELETE/DROP。DROP TABLE 禁止多语句执行。 |
-| **密码屏蔽** | 所有 API 响应自动移除密码字段，前端永远无法获取已存储的密码。 |
+| **密码屏蔽** | GET 接口不返回密码；`POST /connections` 的响应目前会返回加密后的密文（不是明文），后续版本统一剥离。 |
+| **网络暴露** | 默认 `server.address=127.0.0.1`；Docker 部署时由 compose 注入 `SERVER_ADDRESS=0.0.0.0`，端口暴露受 `ports` 控制。 |
+
+> 完整安全模型、威胁边界与报告方式见 [SECURITY.md](SECURITY.md)。
+
+---
+
+## ⚠️ 已知限制
+
+- 暂无登录认证、操作审计、多用户/权限体系；
+- PostgreSQL 目前只有"测试连接"可用，库表浏览与建表仍按 MySQL 方言实现；
+- 查询结果一次性加载到内存，没有行数上限与执行超时（大表查询需谨慎）；
+- 表数据分页会额外执行一次 `COUNT(*)`，超大表翻页会较慢；
+- CSV/Excel 导入要求表头与表列完全一致，暂不支持列子集映射；
+- 连接"选中"状态存在前端内存中，刷新页面会丢失（规划中）；
+- 连接池状态、数据库信息两个接口后端已实现，但前端尚无对应面板。
 
 ---
 
@@ -318,6 +348,8 @@ java -jar minicat-server.jar --spring.profiles.active=prod
 ## 📝 更新日志
 
 详见 [CHANGELOG.md](MD-Files/CHANGELOG.md)。
+
+**v1.0.1（M0 修复，待发布）** — 安全限位（默认仅监听本机、移除通配 CORS、加密密钥外置）+ 修复表结构字段/自增识别/分页三处契约 bug + 后端错误信息透传 + 导入大小限制 + 仓库清理与文档诚实化。
 
 **v1.0.0**（2026-04-25）— 首次发布：支持 MySQL / PostgreSQL、Vue3 界面、SQL 注入防护、HikariCP 连接池、CSV/Excel 数据导入。
 

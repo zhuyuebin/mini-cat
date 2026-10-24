@@ -1,5 +1,7 @@
 # 🐱 MiniCat - 轻量级Web数据库管理工具
 
+> ⚠️ **历史文档（2026-04，Gitee 时期版本）**：部分内容已与当前代码不一致（如端口号、启动脚本名、数据库支持范围、加密算法）。请以仓库根目录的 [README.md](../README.md) 和 [SECURITY.md](../SECURITY.md) 为准。
+
 <div align="center">
 
 ![MiniCat Logo](../MiniCat-Frontend/public/logo.png)

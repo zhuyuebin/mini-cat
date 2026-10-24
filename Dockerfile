@@ -32,7 +32,8 @@ COPY MiniCat-Frontend ./MiniCat-Frontend
 COPY --from=frontend-builder /app/frontend/dist ./MiniCat-Frontend/dist
 
 # 构建Spring Boot应用
-RUN mvn clean package -DskipTests -B
+# 前端已在第一阶段构建并复制到 MiniCat-Frontend/dist，这里跳过 frontend-maven-plugin，避免重复构建
+RUN mvn clean package -DskipTests -B -Dskip.installnodenpm -Dskip.npm
 
 # 第三阶段：运行阶段
 FROM eclipse-temurin:17-jre-alpine
@@ -59,9 +60,9 @@ USER minicat
 # 暴露端口
 EXPOSE 8888
 
-# 健康检查
+# 健康检查（项目未引入 actuator，这里探测首页是否可访问）
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8888/actuator/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8888/ || exit 1
 
 # 启动应用
 ENTRYPOINT ["java", "-jar", "app.jar"]

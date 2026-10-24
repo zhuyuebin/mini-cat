@@ -328,7 +328,11 @@ public class DatabaseServiceImpl implements DatabaseService {
                 columnInfo.setDataType(rs.getString("TYPE_NAME"));
                 columnInfo.setNullable(rs.getInt("NULLABLE") == DatabaseMetaData.columnNullable);
                 columnInfo.setDefaultValue(rs.getString("COLUMN_DEF"));
-                columnInfo.setExtra(rs.getString("IS_AUTOINCREMENT"));
+                // JDBC 规范中 IS_AUTOINCREMENT 的取值是 "YES"/"NO"，这里归一化成布尔值给前端，
+                // 避免前端按 MySQL 方言的 "auto_increment" 字符串判断而失效。
+                String autoIncrement = rs.getString("IS_AUTOINCREMENT");
+                columnInfo.setExtra(autoIncrement);
+                columnInfo.setAutoIncrement("YES".equalsIgnoreCase(autoIncrement));
                 columnInfo.setColumnComment(rs.getString("REMARKS"));
                 columns.add(columnInfo);
             }

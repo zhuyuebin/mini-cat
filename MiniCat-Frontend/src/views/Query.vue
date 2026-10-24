@@ -200,7 +200,8 @@ const handleConnectionChange = async (connectionId) => {
     const res = await getDatabases(connectionId)
     databases.value = res.data || []
   } catch (error) {
-    ElMessage.error('获取数据库列表失败')
+    // 错误提示由 axios 响应拦截器统一处理，避免重复弹窗
+    console.error('获取数据库列表失败:', error)
   }
 }
 
@@ -220,7 +221,7 @@ const handleDatabaseChange = async (database) => {
       comment: table.tableComment
     }))
   } catch (error) {
-    ElMessage.error('获取表列表失败')
+    console.error('获取表列表失败:', error)
   } finally {
     tablesLoading.value = false
   }
@@ -262,7 +263,7 @@ const executeQueryHandler = async () => {
     queryResult.value = res.data
     ElMessage.success(`查询成功，共 ${res.data.totalRows} 行`)
   } catch (error) {
-    ElMessage.error('查询执行失败')
+    console.error('查询执行失败:', error)
     queryResult.value = null
   } finally {
     executing.value = false
@@ -324,7 +325,7 @@ const executeUpdateHandler = async () => {
       executionTime: 0
     }
   } catch (error) {
-    ElMessage.error('更新执行失败')
+    console.error('更新执行失败:', error)
     queryResult.value = null
   } finally {
     executing.value = false

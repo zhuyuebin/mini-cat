@@ -8,13 +8,29 @@
 ## [未发布]
 
 ### 新增
-- 待添加新功能
+- 安全模型与威胁边界说明（[SECURITY.md](../SECURITY.md)）
+- `.dockerignore`，构建上下文瘦身
+- 导入上传大小限制：`spring.servlet.multipart.max-file-size=50MB`
+- 连接密码加密密钥改为外部提供：`MINICAT_SECRET_KEY` 环境变量或 `./data/secret.key`（首次启动自动生成）
+- 密文增加版本前缀 `v2:`，为后续密钥轮换做准备
 
 ### 修复
-- 待修复的Bug
+- 表结构页"可空 / 默认值"字段名与后端 DTO 不匹配导致显示错误
+- 自增列识别失效（JDBC 的 `IS_AUTOINCREMENT` 归一化为 `autoIncrement` 布尔字段）
+- 表数据分页总数错误（此前把当前页行数当总数，永远只有一页）
+- 后端业务异常被全局异常处理器吞掉，前端只能看到 "An unexpected error occurred"
+- `SecurityTests` 中 `--` 注释断言与实现相反导致 `mvn test` 失败；补充 `isEncrypted` 误判回归用例
+- Docker 健康检查探测不存在的 `/actuator/health`；后端镜像构建阶段重复构建前端
+- `JAVA_OPTS` 环境变量未被消费（改为 `JAVA_TOOL_OPTIONS`）
+- 默认监听所有网卡（改为 `127.0.0.1`，Docker 内由 `SERVER_ADDRESS=0.0.0.0` 覆盖）
+- `restart.sh` 硬编码的部署路径与 JAR 文件名
 
 ### 变更
-- 待更新的变更
+- 移除 Controller 上的 `@CrossOrigin(origins = "*")`，改为同源访问
+- 密码加密密钥不再硬编码在源码中
+- 移除重复的失败提示（统一由 Axios 响应拦截器弹出）
+- 清理由 Vite 模板遗留的组件/样式/图标，以及重复提交的 logo 图片
+- 文档与代码对齐：PostgreSQL 标记为实验性、SQL 校验定位修正、API 接口数量修正
 
 ---
 

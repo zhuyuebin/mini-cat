@@ -28,4 +28,5 @@
 *.jpeg binary
 *.gif binary
 *.ico binary
-*.svg binary
+# .svg 是文本格式，保持文本模式以便 diff / 合并
+*.svg text

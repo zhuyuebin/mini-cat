@@ -1,5 +1,7 @@
 # MiniCat 快速参考
 
+> ⚠️ **历史文档（2026-04）**：端口已改为 **8888**、Windows 启动脚本是 **start_win.bat**、`application-dev.properties` 已被删除（配置合并进 `application.properties`）。请以根目录 [README.md](../README.md) 为准。
+
 ## 🚀 一键启动
 
 ```bash
